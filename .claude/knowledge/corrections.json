@@ -1,0 +1,43 @@
+{
+  "_description": "Log of corrections applied during music library cleanup sessions",
+  "_schema": {
+    "album_path": "Path to album folder",
+    "correction_type": "Type of correction (cover_art, metadata, folder_rename, etc.)",
+    "before": "State before correction",
+    "after": "State after correction",
+    "date": "ISO date of correction",
+    "source": "Where the correct data came from (itunes, musicbrainz, manual)"
+  },
+  "corrections": [
+    {
+      "album_path": "//openmediavault/music/Ben Harper/Diamonds On The Inside",
+      "correction_type": "cover_art",
+      "before": {
+        "hash": "ae24ce5ef81c",
+        "size_kb": 262,
+        "description": "Wrong cover art embedded"
+      },
+      "after": {
+        "url": "https://is1-ssl.mzstatic.com/image/thumb/Music128/v4/78/b6/9e/78b69e3a-af31-47e1-818a-b25e0c1ea087/00602547810229.rgb.jpg/1200x1200bb.jpg",
+        "size_kb": 597,
+        "source": "itunes"
+      },
+      "date": "2026-01-13"
+    },
+    {
+      "album_path": "//openmediavault/music/Ben Harper/Fight For Your Mind",
+      "correction_type": "cover_art",
+      "before": {
+        "hash": "21bfbb06b4af",
+        "size_kb": 357,
+        "description": "Wrong cover art embedded"
+      },
+      "after": {
+        "url": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4f/1c/be/4f1cbefb-7033-8310-f034-39587c659686/00602547810182.rgb.jpg/1200x1200bb.jpg",
+        "size_kb": 143,
+        "source": "itunes"
+      },
+      "date": "2026-01-13"
+    }
+  ]
+}

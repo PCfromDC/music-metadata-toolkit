@@ -1,0 +1,99 @@
+# Music Library Cleanup Configuration
+# Primary configuration file for the orchestration system
+
+# Library settings
+library:
+  root: "/path/to/music"
+  backup_enabled: true
+  backup_path: "D:/music_backup"
+
+# Data sources for validation (in priority order)
+sources:
+  primary: musicbrainz
+  fallback:
+    - itunes        # iTunes Search API (free, no key required)
+    - discogs
+    - acoustid      # Audio fingerprinting for unknown tracks
+
+# Audio fingerprinting (for unknown/doubtful tracks)
+fingerprinting:
+  enabled: true
+  provider: acoustid
+  chromaprint_path: null    # Auto-detect fpcalc, or specify path
+  confidence_threshold: 0.85
+  use_for:
+    - unknown_tracks        # No metadata at all
+    - low_confidence        # Metadata confidence < 70%
+    - mismatch_detected     # Local vs remote don't match
+
+# API settings
+api:
+  musicbrainz:
+    rate_limit: 1.0         # seconds between requests
+    user_agent: "MusicCleanup/1.0"
+
+  itunes:
+    rate_limit: 0.05        # 20 requests per second allowed
+    country: "us"
+
+  acoustid:
+    rate_limit: 0.33        # 3 requests per second max
+
+  discogs:
+    rate_limit: 1.0
+
+# Confidence thresholds for auto-processing
+thresholds:
+  auto_approve: 0.95        # >= 95% = auto-apply
+  review_required: 0.70     # 70-95% = needs review
+  auto_reject: 0.70         # < 70% = likely wrong match
+
+# Naming conventions
+naming:
+  subtitle_separator: " - "
+  artist_separator: " - "
+  replace_colon_with: " -"
+  max_path_length: 250
+  remove_characters: ['?', '*', '<', '>', '|', '"']
+  disc_format: "[Disc {n}]"
+
+# Genre standardization
+genres:
+  enabled: true
+  mapping:
+    "Alternative Rock": "Rock"
+    "Electronica": "Electronic"
+    "Dance & Electronic": "Electronic"
+    "R&B/Soul": "R&B"
+  flag_for_review:
+    - "Other"
+    - "Unknown"
+    - ""
+
+# Cover art settings
+cover_art:
+  min_resolution: 500
+  preferred_resolution: 1000
+  format: "jpeg"
+  quality: 95
+  embed_in_files: true
+  also_save_folder_jpg: true
+  folder_jpg_name: "folder.jpg"
+
+# Multi-disc handling
+multi_disc:
+  consolidate: true
+  metadata_only: true
+  preserve_originals: true
+
+# Processing options
+processing:
+  parallel_albums: 1
+  checkpoint_interval: 10
+  retry_on_network_error: 3
+
+# Output settings
+output:
+  reports_path: "D:/music cleanup/outputs"
+  logs_path: "D:/music cleanup/logs"
+  state_path: "D:/music cleanup/state"

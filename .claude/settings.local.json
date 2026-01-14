@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(done)",
+      "Bash(python:*)",
+      "Bash(timeout 120 python:*)",
+      "Bash(echo:*)",
+      "Bash(cat:*)",
+      "Skill(clean-music)",
+      "Bash(ping:*)",
+      "Bash(file:*)",
+      "Bash(wc:*)",
+      "Bash(dir:*)",
+      "WebSearch",
+      "WebFetch(domain:www.discogs.com)",
+      "Bash(where:*)",
+      "Bash(cmd /c del \"D:\\\\music cleanup\\\\temp_disco_cover.jpg\" \"D:\\\\music cleanup\\\\embed_disco_cover.py\")",
+      "WebFetch(domain:www.allmusic.com)",
+      "WebFetch(domain:www.amazon.com)",
+      "Bash(cmd /c del \"D:\\\\music cleanup\\\\temp_buddha_cover.jpg\" \"D:\\\\music cleanup\\\\embed_buddha_cover.py\")",
+      "Bash(cmd /c dir /b \"\\\\openmediavault\\\\music\\\\Various Artists\")",
+      "Bash(findstr:*)",
+      "Bash(cmd /c \"dir /b \"\"\\\\openmediavault\\\\music\\\\Various Artists\"\" | findstr /i gainsbourg\")",
+      "Bash(cmd /c del \"D:\\\\music cleanup\\\\fix_beginners_guide.py\" \"D:\\\\music cleanup\\\\fix_spacing.py\")",
+      "Bash(cmd /c del \"D:\\\\music cleanup\\\\fix_worldcup.py\")",
+      "Bash(for f in \"D:\\\\music cleanup\"/*.py)",
+      "Bash(do wc -l \"$f\")",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:itunes.apple.com)",
+      "Bash(xargs cat:*)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(powershell -Command \"Get-ChildItem -Recurse -Include *.py,*.md,*.yaml | ForEach-Object { \\(Get-Content $_FullName -Raw\\) -replace ''//openmediavault/music'', ''/path/to/music'' | Set-Content $_FullName -NoNewline }\")",
+      "Bash(git add:*)"
+    ]
+  }
+}

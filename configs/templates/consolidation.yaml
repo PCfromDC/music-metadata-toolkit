@@ -1,0 +1,38 @@
+# Multi-Disc Album Consolidation Configuration
+#
+# Usage: python utilities/process_consolidation.py configs/active/my_consolidation.yaml
+#
+# Copy this template to configs/active/ and customize for your needs.
+
+# Base path for all operations
+base_path: "/path/to/music/Various Artists"
+
+# List of albums to consolidate
+consolidations:
+  # Example 1: Two-disc set with bracket notation
+  - source_folders:
+      - "Album Name [Disc 1]"
+      - "Album Name [Disc 2]"
+    target_folder: "Album Name"
+    metadata:
+      album: "Album Name"
+      albumartist: "Various Artists"
+      genre: "Compilation"
+
+  # Example 2: Three-disc set with different naming
+  - source_folders:
+      - "Greatest Hits Disc 1"
+      - "Greatest Hits Disc 2"
+      - "Greatest Hits Disc 3"
+    target_folder: "Greatest Hits"
+    metadata:
+      album: "Greatest Hits"
+      albumartist: "Various Artists"
+      genre: "Pop"
+
+# Notes:
+# - Disc numbers are auto-detected from source folder names
+# - Files are renamed with disc prefix: 1-01, 1-02, 2-01, etc.
+# - Metadata discnumber is set automatically (e.g., "1/3", "2/3")
+# - Empty source folders are removed after consolidation
+# - folder.jpg is preserved in the target folder

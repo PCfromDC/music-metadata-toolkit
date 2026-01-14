@@ -1,0 +1,27 @@
+# Batch Folder Rename Configuration
+#
+# Usage: python utilities/process_batch_rename.py configs/active/my_renames.yaml
+#
+# Copy this template to configs/active/ and customize for your needs.
+
+# Base path for all folder operations
+base_path: "/path/to/music/Various Artists"
+
+# List of folder renames
+# Each entry has 'from' (current name) and 'to' (new name)
+renames:
+  - from: "Old Folder Name"
+    to: "New Folder Name"
+
+  - from: "Album Name - Truncated Tit"
+    to: "Album Name - Truncated Title Complete"
+
+  - from: "Album with_ Underscore"
+    to: "Album with - Underscore Fixed"
+
+# Example: Truncated names that need completing
+# renames:
+#   - from: "Putumayo Presents - Music from the Chocol"
+#     to: "Putumayo Presents - Music from the Chocolate Lands"
+#   - from: "Ministry of Sound - The Annual 2003 [Aust"
+#     to: "Ministry of Sound - The Annual 2003 [Australia]"

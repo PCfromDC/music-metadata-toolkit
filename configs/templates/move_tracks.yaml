@@ -1,0 +1,35 @@
+# Track Movement Configuration
+#
+# Usage: python utilities/process_move_tracks.py configs/active/my_moves.yaml
+#
+# Copy this template to configs/active/ and customize for your needs.
+
+# List of tracks to move
+moves:
+  # Example: Move a misplaced track to the correct album
+  - source: "/path/to/music/Various Artists/Wrong Album/01 Track Name.mp3"
+    dest_folder: "/path/to/music/Artist Name/Correct Album"
+    metadata:
+      album: "Correct Album"
+      albumartist: "Artist Name"
+      artist: "Artist Name"
+      tracknumber: "5/12"
+      date: "2020"
+      genre: "Rock"
+
+  # Example: Move track from compilation to artist folder
+  - source: "/path/to/music/Various Artists/Natural Acoustic/01 Song.mp3"
+    dest_folder: "/path/to/music/Ben Harper/Welcome to the Cruel World"
+    metadata:
+      album: "Welcome to the Cruel World"
+      albumartist: "Ben Harper"
+      artist: "Ben Harper"
+      tracknumber: "2/12"
+      date: "1994"
+      genre: "Rock"
+
+# Notes:
+# - Source track is deleted from original location after move
+# - Empty source folders are automatically removed
+# - All metadata fields are optional (only specified fields are updated)
+# - Track filename may be renamed based on tracknumber if provided

@@ -1,0 +1,83 @@
+{
+  "_description": "Learned patterns for detecting potential issues in music libraries",
+  "_usage": "When scanning albums, check against these patterns to proactively identify issues",
+  "patterns": [
+    {
+      "id": "wrong_embedded_cover",
+      "name": "Wrong Embedded Cover Art",
+      "description": "Album has high-quality embedded cover art that doesn't match the album",
+      "detection": {
+        "conditions": [
+          "Cover art exists with good size (>50KB) and coverage (>90%)",
+          "iTunes search returns a different cover art hash",
+          "Folder name doesn't appear in cover art text (via visual check)"
+        ],
+        "severity": "medium",
+        "confidence_threshold": 0.7
+      },
+      "discovered": "2026-01-13",
+      "example": "Ben Harper/Diamonds On The Inside - had wrong cover embedded"
+    },
+    {
+      "id": "truncated_folder_name",
+      "name": "Truncated Folder Name",
+      "description": "Folder name appears to be cut off mid-word",
+      "detection": {
+        "conditions": [
+          "Folder name > 50 characters",
+          "Folder name ends with incomplete word or '...'",
+          "Track metadata contains longer album name"
+        ],
+        "severity": "low",
+        "confidence_threshold": 0.9
+      },
+      "discovered": "2026-01-13",
+      "example": "Beginner's Guide to World Music - 2006 Wo (should be World Cup Edition)"
+    },
+    {
+      "id": "character_substitution",
+      "name": "Windows Character Substitution",
+      "description": "Folder has underscore where metadata has colon or other special char",
+      "detection": {
+        "conditions": [
+          "Folder contains '_' followed by space or capital letter",
+          "Track metadata has ':' in same position"
+        ],
+        "severity": "low",
+        "confidence_threshold": 0.95
+      },
+      "discovered": "2026-01-13",
+      "example": "Album_ Subtitle → Album: Subtitle"
+    },
+    {
+      "id": "multi_disc_not_consolidated",
+      "name": "Multi-Disc Album Not Consolidated",
+      "description": "Multiple folders for same album with disc indicators",
+      "detection": {
+        "conditions": [
+          "Multiple folders with same base name",
+          "Folders contain [Disc N], Disc N, or CD N pattern"
+        ],
+        "severity": "medium",
+        "confidence_threshold": 0.99
+      },
+      "discovered": "2026-01-13",
+      "example": "Album [Disc 1] + Album [Disc 2] → should be consolidated"
+    },
+    {
+      "id": "missing_folder_jpg",
+      "name": "Missing folder.jpg Despite Embedded Art",
+      "description": "Tracks have embedded cover art but no folder.jpg exists",
+      "detection": {
+        "conditions": [
+          "No folder.jpg in album directory",
+          "Tracks have embedded cover art"
+        ],
+        "severity": "low",
+        "confidence_threshold": 1.0
+      },
+      "discovered": "2026-01-13",
+      "example": "Ben Harper albums missing folder.jpg"
+    }
+  ]
+}

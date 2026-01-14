@@ -1,0 +1,43 @@
+# Credentials - NEVER COMMIT
+credentials.yaml
+*.local.yaml
+secrets.yaml
+.secrets
+
+# State files
+state/
+
+# Log files
+logs/
+
+# Generated outputs (reports, audits)
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.jpg
+*.jpeg
+*.png
+temp/
+tmpclaude-*

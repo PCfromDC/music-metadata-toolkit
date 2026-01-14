@@ -1,0 +1,30 @@
+{
+  "_description": "Known correct cover art URLs for albums that have been manually verified",
+  "_usage": "When processing an album, check if it exists here. If so, use the known correct URL instead of searching.",
+  "albums": {
+    "Ben Harper/Diamonds On The Inside": {
+      "correct_url": "https://is1-ssl.mzstatic.com/image/thumb/Music128/v4/78/b6/9e/78b69e3a-af31-47e1-818a-b25e0c1ea087/00602547810229.rgb.jpg/1200x1200bb.jpg",
+      "verified_date": "2026-01-13",
+      "source": "itunes",
+      "notes": "Original embedded art was incorrect"
+    },
+    "Ben Harper/Fight For Your Mind": {
+      "correct_url": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4f/1c/be/4f1cbefb-7033-8310-f034-39587c659686/00602547810182.rgb.jpg/1200x1200bb.jpg",
+      "verified_date": "2026-01-13",
+      "source": "itunes",
+      "notes": "Original embedded art was incorrect"
+    },
+    "Ben Harper/Welcome to the Cruel World": {
+      "correct_url": "https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/f8/2f/8d/f82f8d93-182a-c4a6-97ef-05a645794145/00602547809698.rgb.jpg/1200x1200bb.jpg",
+      "verified_date": "2026-01-13",
+      "source": "itunes",
+      "notes": "Verified correct"
+    },
+    "Ben Harper/Both Sides of the Gun": {
+      "correct_url": "https://is1-ssl.mzstatic.com/image/thumb/Music124/v4/07/52/57/075257ee-8ebd-4ab5-75da-ff4366d127eb/00602547810274.rgb.jpg/1200x1200bb.jpg",
+      "verified_date": "2026-01-13",
+      "source": "itunes",
+      "notes": "Verified correct"
+    }
+  }
+}
