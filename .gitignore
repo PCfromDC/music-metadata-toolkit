@@ -1,8 +1,10 @@
 # Credentials - NEVER COMMIT
 credentials.yaml
 *.local.yaml
+*.local.json
 secrets.yaml
 .secrets
+.claude/settings.local.json
 
 # State files
 state/
