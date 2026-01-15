@@ -9,6 +9,15 @@ A comprehensive Python-based toolset for auditing, cleaning, and maintaining mus
 pip install mutagen requests
 ```
 
+### Optional: API Credentials
+For audio fingerprinting and extended metadata lookup, set up API credentials:
+```bash
+cp configs/templates/credentials.yaml.example configs/active/credentials.yaml
+# Edit configs/active/credentials.yaml with your API keys
+```
+
+See `configs/README.md` for details on each service.
+
 ### Using the CLI
 
 ```bash
@@ -100,8 +109,13 @@ D:\music cleanup\
 │   └── scan_folders.py
 │
 ├── configs/                # YAML configurations
+│   ├── README.md           # Config documentation
 │   ├── templates/          # Config templates
-│   └── active/             # User's active configs
+│   │   ├── credentials.yaml.example
+│   │   ├── batch_rename.yaml
+│   │   ├── consolidation.yaml
+│   │   └── move_tracks.yaml
+│   └── active/             # User's active configs (gitignored)
 │
 ├── outputs/                # Generated reports (JSON/CSV)
 ├── state/                  # Session state & checkpoints
@@ -152,8 +166,8 @@ This project uses a **dual-agent architecture** combining Python processing agen
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│              ORCHESTRATOR (Python)                       │
-│     Manages workflow, state, and agent coordination      │
+│              ORCHESTRATOR (Python)                      │
+│     Manages workflow, state, and agent coordination     │
 └────────────────────────┬────────────────────────────────┘
                          │
         ┌────────────────┼────────────────┐
@@ -167,10 +181,10 @@ This project uses a **dual-agent architecture** combining Python processing agen
         └───────────────┼────────────────┘
                         ▼
    ┌─────────────────────────────────────────────────────┐
-   │           Claude AI Decision Layer                   │
-   │  - Metadata validation & conflict resolution         │
-   │  - Visual cover art verification                     │
-   │  - Confidence scoring & automation thresholds        │
+   │           Claude AI Decision Layer                  │
+   │  - Metadata validation & conflict resolution        │
+   │  - Visual cover art verification                    │
+   │  - Confidence scoring & automation thresholds       │
    └─────────────────────────────────────────────────────┘
 ```
 

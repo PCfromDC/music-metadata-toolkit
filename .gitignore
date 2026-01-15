@@ -6,6 +6,10 @@ secrets.yaml
 .secrets
 .claude/settings.local.json
 
+# User configs (keep templates, ignore active configs)
+configs/active/*
+!configs/active/.gitkeep
+
 # State files
 state/
 

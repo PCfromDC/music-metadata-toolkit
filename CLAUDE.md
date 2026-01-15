@@ -12,7 +12,6 @@ D:\music cleanup\
 ├── README.md                   # Quick start guide
 ├── CLAUDE.md                   # This documentation
 ├── music-config.yaml           # Primary configuration
-├── credentials.yaml            # API keys (gitignored)
 ├── fpcalc.exe                  # Audio fingerprinting binary
 ├── .gitignore
 │
@@ -48,11 +47,13 @@ D:\music cleanup\
 │   └── consolidate_multidisc.py# Multi-disc consolidation
 │
 ├── configs/                    # YAML configurations
-│   ├── templates/              # Config templates
+│   ├── README.md               # Config folder documentation
+│   ├── templates/              # Config templates (copy to active/)
+│   │   ├── credentials.yaml.example  # API credentials template
 │   │   ├── batch_rename.yaml   # Batch folder renaming
 │   │   ├── consolidation.yaml  # Multi-disc consolidation
 │   │   └── move_tracks.yaml    # Track movement config
-│   └── active/                 # User's active configs
+│   └── active/                 # User's active configs (gitignored)
 │
 ├── scripts/                    # Script archive
 │   └── completed/              # Archived one-off scripts
