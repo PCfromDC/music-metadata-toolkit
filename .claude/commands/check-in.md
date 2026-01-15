@@ -113,6 +113,9 @@ rm -f temp/* 2>/dev/null
 # Delete backup/temp files
 find . -type f -name "*.tmp" -delete 2>/dev/null
 find . -type f -name "*.bak" -delete 2>/dev/null
+
+# Delete Windows nul artifacts
+rm -f nul 2>/dev/null
 ```
 
 #### 2.2 Report Cleanup
@@ -123,6 +126,7 @@ find . -type f -name "*.bak" -delete 2>/dev/null
 [DELETED] N __pycache__ directories
 [DELETED] N .pyc/.pyo files
 [DELETED] N temp files
+[DELETED] N nul artifacts
 ```
 
 ---

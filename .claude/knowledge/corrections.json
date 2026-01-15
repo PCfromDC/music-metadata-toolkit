@@ -10,7 +10,7 @@
   },
   "corrections": [
     {
-      "album_path": "//openmediavault/music/Ben Harper/Diamonds On The Inside",
+      "album_path": "/path/to/music/Ben Harper/Diamonds On The Inside",
       "correction_type": "cover_art",
       "before": {
         "hash": "ae24ce5ef81c",
@@ -25,7 +25,7 @@
       "date": "2026-01-13"
     },
     {
-      "album_path": "//openmediavault/music/Ben Harper/Fight For Your Mind",
+      "album_path": "/path/to/music/Ben Harper/Fight For Your Mind",
       "correction_type": "cover_art",
       "before": {
         "hash": "21bfbb06b4af",
