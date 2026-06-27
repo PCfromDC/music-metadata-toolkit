@@ -10,7 +10,7 @@ import pytest
 
 from tests.synth import make_audio, make_image_bytes
 from utilities import batch_covers
-from utilities.core.cover_art import extract_cover_from_file
+from utilities.core.cover_art import embed_in_file, extract_cover_from_file
 from utilities.core.ffprobe import attached_pic_dims, ffprobe_available
 
 
@@ -120,3 +120,47 @@ def test_invalid_local_image_raises(tmp_path):
     bad.write_bytes(b"not an image")
     with pytest.raises(Exception):
         batch_covers.run(str(library), "missing", image_path=str(bad))
+
+
+def test_partial_coverage_album_still_needs_art(tmp_path):
+    """An album where only some tracks have art must NOT be skipped."""
+    album = _make_album(tmp_path / "lib" / "Partial")
+    image = tmp_path / "cover.jpg"
+    image.write_bytes(make_image_bytes("JPEG", size=(640, 640)))
+
+    # Embed art into just one of the two tracks.
+    embed_in_file(album / "01 track.mp3", image.read_bytes())
+    assert batch_covers.file_has_valid_art(album / "01 track.mp3") is True
+    assert batch_covers.album_has_valid_art(album) is False
+
+    summary = batch_covers.run(str(tmp_path / "lib"), "missing", image_path=str(image))
+    assert summary["embedded"] == 1
+    for track in ("01 track.mp3", "02 track.flac"):
+        _assert_dims_positive(album / track)
+
+
+def test_dry_run_restore_without_folder_jpg_reports_no_source(tmp_path):
+    library = tmp_path / "lib"
+    _make_album(library / "No Folder Jpg")
+    summary = batch_covers.run(str(library), "restore", dry_run=True)
+    assert summary["embedded"] == 0
+    assert summary["no_source"] == 1
+
+
+def test_retries_zero_clamped_to_one_attempt(tmp_path):
+    """--retries 0 must still attempt one download, not silently disable it."""
+    calls = {"n": 0}
+
+    def fake_download(url):
+        calls["n"] += 1
+        return make_image_bytes("JPEG")
+
+    original = batch_covers.download_cover
+    batch_covers.download_cover = fake_download
+    try:
+        # main() clamps retries; download_with_retries must run >=1 attempt.
+        data = batch_covers.download_with_retries("http://x", retries=1, backoff=0)
+    finally:
+        batch_covers.download_cover = original
+    assert calls["n"] == 1
+    assert data

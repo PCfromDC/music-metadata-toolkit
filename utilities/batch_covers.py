@@ -80,21 +80,16 @@ def iter_albums(library_path) -> Iterator[Path]:
             yield child
 
 
-def album_has_valid_art(album_path) -> bool:
-    """True if the album's first track already carries valid embedded art.
+def file_has_valid_art(audio_path) -> bool:
+    """True if a single audio file carries valid embedded cover art.
 
     Uses ffprobe (Jellyfin's engine) as ground truth; falls back to a Pillow
-    decode of the extracted bytes when ffprobe is unavailable. Albums with no
-    audio files are treated as having art (nothing to do).
+    decode of the extracted bytes when ffprobe is unavailable.
     """
-    files = list(iter_audio_files(album_path))
-    if not files:
-        return True
-    probe = files[0]
     if ffprobe_available():
-        dims = attached_pic_dims(probe)
+        dims = attached_pic_dims(audio_path)
         return bool(dims and dims[0] > 0 and dims[1] > 0)
-    data = extract_cover_from_file(probe)
+    data = extract_cover_from_file(audio_path)
     if not data:
         return False
     try:
@@ -102,6 +97,20 @@ def album_has_valid_art(album_path) -> bool:
         return True
     except InvalidCoverArt:
         return False
+
+
+def album_has_valid_art(album_path) -> bool:
+    """True only if EVERY track in the album carries valid embedded art.
+
+    Checking all files (not just the first) means an album with partial
+    coverage still counts as needing art, so bare tracks get embedded and a
+    --retry pass re-attempts files an earlier fail-soft run left coverless.
+    Albums with no audio files are treated as having art (nothing to do).
+    """
+    files = list(iter_audio_files(album_path))
+    if not files:
+        return True
+    return all(file_has_valid_art(audio) for audio in files)
 
 
 # --------------------------------------------------------------------------- #
@@ -222,8 +231,15 @@ def run(
             continue
 
         if dry_run:
-            print("  [dry-run] would embed cover art")
-            summary["embedded"] += 1
+            # Only cheap, offline source checks here (restore + local image);
+            # an online lookup is unknown without a network call, so report it
+            # as a would-attempt rather than guessing.
+            if mode == "restore" and folder_jpg_bytes(album) is None:
+                print("  [dry-run] would skip (no folder.jpg)")
+                summary["no_source"] += 1
+            else:
+                print("  [dry-run] would embed cover art")
+                summary["embedded"] += 1
             continue
 
         data = resolve_source(album, mode, image_bytes, retries=retries, backoff=backoff)
@@ -322,6 +338,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     retries = args.retries if args.retries is not None else (3 if args.mode == "retry" else 1)
+    retries = max(1, retries)  # always attempt at least one download
     try:
         run(
             args.library,
