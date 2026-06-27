@@ -1417,25 +1417,15 @@ class MusicMetadataSystem:
             self._log("  No cover art URL found from sources")
             return None
 
-        # Download the cover art
+        # Download and validate the cover art via the shared core pipeline.
+        from utilities.core import cover_art as _cover_art
+        from utilities.core.cover_art import InvalidCoverArt
         try:
-            headers = {
-                'User-Agent': 'MusicMetadataSystem/2.0 (https://github.com/music-cleanup)'
-            }
-            response = requests.get(cover_url, headers=headers, timeout=60)
-            response.raise_for_status()
-
-            # Verify it's an image
-            content_type = response.headers.get('content-type', '')
-            if 'image' not in content_type:
-                self._log(f"  Warning: Response is not an image ({content_type})")
-                return None
-
-            self._log(f"  Downloaded cover art ({len(response.content) // 1024}KB)")
-            return response.content
-
-        except requests.RequestException as e:
-            self._log(f"  Failed to download cover art: {e}")
+            data = _cover_art.download_cover(cover_url)
+            self._log(f"  Downloaded cover art ({len(data) // 1024}KB)")
+            return data
+        except InvalidCoverArt as e:
+            self._log(f"  Failed to download valid cover art: {e}")
             return None
 
     def _embed_cover_art(self, album_path: str, image_data: bytes) -> Dict[str, Any]:
@@ -1449,72 +1439,15 @@ class MusicMetadataSystem:
         Returns:
             Results with counts of embedded files
         """
-        from mutagen.mp3 import MP3
-        from mutagen.mp4 import MP4, MP4Cover
-        from mutagen.flac import FLAC, Picture
-        from mutagen.id3 import ID3, APIC
-
-        path = Path(album_path)
-        audio_exts = {'.mp3', '.m4a', '.flac'}
-        results = {
-            'embedded': 0,
-            'failed': 0,
-            'errors': []
-        }
-
-        # Detect image format
-        is_png = image_data[:8] == b'\x89PNG\r\n\x1a\n'
-        mime_type = 'image/png' if is_png else 'image/jpeg'
-
-        for audio_file in sorted(path.iterdir()):
-            if audio_file.suffix.lower() not in audio_exts:
-                continue
-
-            try:
-                ext = audio_file.suffix.lower()
-
-                if ext == '.mp3':
-                    audio = MP3(str(audio_file), ID3=ID3)
-                    # Remove existing cover art
-                    audio.tags.delall('APIC')
-                    # Add new cover art
-                    audio.tags.add(
-                        APIC(
-                            encoding=3,  # UTF-8
-                            mime=mime_type,
-                            type=3,  # Front cover
-                            desc='Cover',
-                            data=image_data
-                        )
-                    )
-                    audio.save()
-
-                elif ext == '.m4a':
-                    audio = MP4(str(audio_file))
-                    img_format = MP4Cover.FORMAT_PNG if is_png else MP4Cover.FORMAT_JPEG
-                    audio['covr'] = [MP4Cover(image_data, imageformat=img_format)]
-                    audio.save()
-
-                elif ext == '.flac':
-                    audio = FLAC(str(audio_file))
-                    # Remove existing pictures
-                    audio.clear_pictures()
-                    # Add new picture
-                    pic = Picture()
-                    pic.type = 3  # Front cover
-                    pic.mime = mime_type
-                    pic.desc = 'Cover'
-                    pic.data = image_data
-                    audio.add_picture(pic)
-                    audio.save()
-
-                results['embedded'] += 1
-
-            except Exception as e:
-                results['failed'] += 1
-                results['errors'].append(f"{audio_file.name}: {e}")
-
-        return results
+        # Route through the shared validated pipeline: each file is checked with
+        # ffprobe after writing, so width=0/height=0 art can no longer be saved.
+        from utilities.core import cover_art as _cover_art
+        from utilities.core.cover_art import InvalidCoverArt
+        try:
+            return _cover_art.embed_in_album(album_path, image_data)
+        except InvalidCoverArt as e:
+            self._log(f"  Cover art rejected before embedding: {e}")
+            return {'embedded': 0, 'failed': 0, 'total': 0, 'errors': [f"invalid cover art: {e}"]}
 
     def _extract_cover_from_file(self, audio_file: Path) -> Optional[bytes]:
         """

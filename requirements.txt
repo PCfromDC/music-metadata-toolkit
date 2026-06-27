@@ -1,0 +1,9 @@
+# Core runtime dependencies for the Music Metadata Toolkit.
+# Install with:  pip install -r requirements.txt
+mutagen>=1.47
+requests>=2.28
+PyYAML>=6.0
+Pillow>=10.0
+# Provides bundled ffmpeg/ffprobe (downloaded on first use) for ground-truth
+# cover-art validation matching what Jellyfin's ffmpeg extraction sees.
+static-ffmpeg>=2.5

@@ -14,6 +14,7 @@ Commands:
     consolidate <path>       Find and consolidate multi-disc albums
     move-track <src> <dest>  Move track between albums
     embed-cover <path>       Embed cover art from URL/file
+    repair-covers <path>     Detect and repair corrupted embedded album art
     status                   Show processing status
     resume                   Resume interrupted session
 """
@@ -85,6 +86,30 @@ def cmd_embed_cover(args):
     embed_cover_art(args.path, args.cover)
 
 
+def cmd_repair_covers(args):
+    """Detect and repair corrupted embedded album art."""
+    from utilities.repair_covers import repair_library
+
+    summary = repair_library(
+        args.path,
+        scan_only=args.scan_only,
+        dry_run=args.dry_run,
+    )
+
+    print(f"\n=== Repair Covers Summary ===")
+    print(f"Album folders scanned: {summary['albums']}")
+    print(f"Albums needing repair: {summary['needs_repair']}")
+    if not args.scan_only and not args.dry_run:
+        print(f"Albums repaired:       {summary['repaired']}")
+        print(f"Tracks re-embedded:    {summary['files_fixed']}")
+        print(f"Albums skipped:        {summary['skipped']}")
+        print(f"Albums failed:         {summary['failed']}")
+    if args.scan_only:
+        print("(Scan only - no changes made)")
+    if args.dry_run:
+        print("(Dry run - no changes made)")
+
+
 def cmd_status(args):
     """Show processing status."""
     from orchestrator.state import SessionState
@@ -148,6 +173,13 @@ def main():
     cover_parser.add_argument('path', help='Album folder path')
     cover_parser.add_argument('cover', help='Cover image URL or file path')
     cover_parser.set_defaults(func=cmd_embed_cover)
+
+    # repair-covers command
+    repair_parser = subparsers.add_parser('repair-covers', help='Detect and repair corrupted embedded album art')
+    repair_parser.add_argument('path', help='Library / artist / album folder to scan')
+    repair_parser.add_argument('--scan-only', action='store_true', help='Report corrupted albums without making changes')
+    repair_parser.add_argument('--dry-run', action='store_true', help='Show the repair plan without fetching or writing')
+    repair_parser.set_defaults(func=cmd_repair_covers)
 
     # status command
     status_parser = subparsers.add_parser('status', help='Show processing status')

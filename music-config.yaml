@@ -80,6 +80,22 @@ cover_art:
   also_save_folder_jpg: true
   folder_jpg_name: "folder.jpg"
 
+# Optional AI "second opinion" on cover art (visual cover-match).
+# The deterministic cover checks in utilities/core/ are always-on and do NOT
+# depend on this block. This is an OPTIONAL, pluggable layer. The default is
+# zero-AI and zero-network: enabled: false + provider: null (NullValidator),
+# which abstains on every album and never touches the network.
+# See docs/AI_VALIDATORS.md to bring your own validator.
+ai_validation:
+  enabled: false             # master switch; false = NullValidator (no AI, no network)
+  provider: null             # null | ollama | openai_compat | anthropic | hermes | <contrib name>
+  endpoint: ""               # provider URL (e.g. http://localhost:11434 for ollama)
+  model: ""                  # vision model name (provider-specific default if blank)
+  checks:
+    cover_visual_match: true # ask the validator whether art matches the album
+  fail_mode: soft            # soft = log AI errors and continue; hard = re-raise
+  timeout: 60                # seconds per request
+
 # Multi-disc handling
 multi_disc:
   consolidate: true

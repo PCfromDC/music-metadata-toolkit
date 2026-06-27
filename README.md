@@ -314,6 +314,48 @@ python utilities/embed_cover.py "path/to/album" "https://cover-url.jpg"
 
 See [`docs/standalone-usage.md`](docs/standalone-usage.md) for a comprehensive standalone usage guide.
 
+## Bring Your Own Validator (optional AI second opinion)
+
+The deterministic cover checks in `utilities/core/` (Pillow + ffprobe) are
+always-on and need no AI and no network. On top of them sits an **optional,
+pluggable** AI layer that gives a "second opinion" on whether embedded album art
+visually matches the album (catching art that is technically valid but wrong).
+
+By default this layer is OFF and requires nothing:
+
+```yaml
+# music-config.yaml
+ai_validation:
+  enabled: false      # NullValidator: abstains on every album, zero network calls
+  provider: null
+```
+
+Run a pass (default config runs the NullValidator with no AI and no network):
+
+```bash
+python utilities/ai_validate_covers.py "/path/to/music/Artist"
+```
+
+Owners can wire in their own validator (e.g. a local Hermes/Jarvis gateway) and
+the public can bring **Ollama**, an **OpenAI-compatible** server, **Anthropic
+Claude**, a custom **Hermes** gateway, or nothing at all. Selecting a provider:
+
+```yaml
+ai_validation:
+  enabled: true
+  provider: ollama            # or openai_compat | anthropic | hermes | <your contrib name>
+  endpoint: "http://localhost:11434"
+  model: "llava"
+```
+
+To add a validator without touching the toolkit, drop a `BaseAIValidator`
+subclass in `validators/contrib/` (copy `validators/contrib/example_validator.py`)
+or register an entry point in the `music_toolkit.validators` group. The pass is
+non-destructive: high-confidence mismatches are logged to
+`.claude/knowledge/patterns.json` for review, never auto-fixed.
+
+See [`docs/AI_VALIDATORS.md`](docs/AI_VALIDATORS.md) for the full guide.
+
 ## Resources
 
 - [MusicBrainz](https://musicbrainz.org/) - Music metadata database

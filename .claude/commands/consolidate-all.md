@@ -72,8 +72,8 @@ For each multi-disc set:
 
 | Pattern | Example |
 |---------|---------|
-| Bracket | `Album [Disc 1]`, `Album [Disc 2]` |
-| Bracket CD | `Album [CD 1]`, `Album [CD 2]` |
-| Suffix | `Album Disc 1`, `Album Disc 2` |
-| Suffix CD | `Album CD1`, `Album CD2` |
-| Dash | `Album - Disc 1`, `Album - Disc 2` |
+| Bracket | `Album [Disc 1]`, `Album [CD 1]` |
+| Paren | `Album (Disc 1)`, `Album (CD 1)` |
+| Suffix | `Album Disc 1`, `Album Disk 1` |
+| Suffix CD | `Album CD1`, `Album CD 1` |
+| Dash | `Album - Disc 1`, `Album - CD 1` |

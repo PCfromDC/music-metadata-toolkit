@@ -11,10 +11,16 @@ from pathlib import Path
 from typing import List, Dict, Optional
 from enum import Enum
 from dataclasses import dataclass
+import os
 import re
 import sys
 
 sys.stdout.reconfigure(encoding='utf-8')
+
+# Ensure the project root is importable whether run as a script or imported.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from utilities.core.naming import make_windows_safe
 
 try:
     from mutagen.mp3 import MP3
@@ -45,39 +51,8 @@ class FolderIssue:
 class FolderValidator:
     """Validate and fix folder names against track metadata."""
 
-    # Characters unsafe for Windows filenames
-    UNSAFE_CHARS = [':', '?', '*', '"', '<', '>', '|']
-
-    # Substitution patterns
-    SUBSTITUTIONS = [
-        (r'[:\u2013\u2014]', ' -'),  # Colon and dashes → " -"
-        (r'[éèê]', 'e'),              # Accented e
-        (r'[àâ]', 'a'),               # Accented a
-        (r'[ùû]', 'u'),               # Accented u
-        (r'[îï]', 'i'),               # Accented i
-        (r'[ôö]', 'o'),               # Accented o
-        (r'[ç]', 'c'),                # Cedilla
-        (r'[ñ]', 'n'),                # Tilde n
-    ]
-
     def __init__(self):
         self.issues: List[FolderIssue] = []
-
-    def make_windows_safe(self, name: str) -> str:
-        """Convert album name to Windows-safe folder name."""
-        result = name
-
-        # Replace colon with ' -'
-        result = result.replace(':', ' -')
-
-        # Remove other unsafe characters
-        for char in ['?', '*', '"', '<', '>', '|']:
-            result = result.replace(char, '')
-
-        # Normalize whitespace
-        result = ' '.join(result.split())
-
-        return result.strip()
 
     def get_album_metadata(self, folder: Path) -> Optional[str]:
         """Get album name from first MP3 in folder."""
@@ -94,7 +69,7 @@ class FolderValidator:
 
     def categorize_issue(self, folder_name: str, metadata: str) -> IssueType:
         """Determine the type of mismatch."""
-        safe_metadata = self.make_windows_safe(metadata)
+        safe_metadata = make_windows_safe(metadata)
 
         # Check for truncation
         if len(folder_name) < len(safe_metadata):
@@ -135,7 +110,7 @@ class FolderValidator:
             if not metadata:
                 continue
 
-            expected = self.make_windows_safe(metadata)
+            expected = make_windows_safe(metadata)
 
             if folder.name != expected:
                 issue_type = self.categorize_issue(folder.name, metadata)

@@ -448,6 +448,22 @@ python utilities/track_mover.py "source/track.mp3" "dest/folder" \
     --number "5/12"
 ```
 
+### Cover Art Validation (core)
+
+All cover and image handling now routes through a single validated module:
+`utilities/core/cover_art.py`. Every embed, download, and folder-sync path
+goes through it, so the same checks apply everywhere:
+
+- Rejects empty or corrupt image bytes before they can be written.
+- Uses Pillow plus `ffprobe` as ground truth for real pixel dimensions
+  (not just file size or coverage).
+- Performs a post-write `dims > 0` check to confirm the embedded art is valid.
+
+This fixed the `width=0` / `height=0` artwork that Jellyfin reported on
+previously "valid-looking" files. Background and rationale:
+> See project memory: `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\cover-art-validation.md`
+> and `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\jellyfin-ffprobe-truth.md` (indexed in MEMORY.md).
+
 ---
 
 ## YAML Configuration System
@@ -548,444 +564,23 @@ moves:
 
 ## Multi-Disc Album Consolidation
 
-### Purpose
-Merge multi-disc compilation albums into single folders while preserving disc information in metadata.
-
-### Workflow
-
-1. **Identify Multi-Disc Sets**
-   ```bash
-   python utilities/consolidate_multidisc.py --scan "/path/to/music/Artist"
-   ```
-
-2. **Review Detection Report**
-   - Check `outputs/multidisc_analysis.json` for complete and orphaned sets
-   - Verify disc numbering is correct
-   - Confirm album names match
-   - **Note:** Volume-based series (e.g., "Now That's What I Call Music! Vol. 8, 11, 23") may be incorrectly detected as multi-disc sets. Review carefully before consolidating.
-
-3. **Test Consolidation (Recommended)**
-   ```bash
-   # Dry-run first to preview changes
-   python utilities/consolidate_multidisc.py --consolidate "Album Name" --path "/path/to/music/Artist" --dry-run
-
-   # Then run actual consolidation
-   python utilities/consolidate_multidisc.py --consolidate "Album Name" --path "/path/to/music/Artist"
-   ```
-
-4. **Verify Results**
-   - Check that consolidated folder contains all tracks
-   - Verify disc metadata is set correctly (discnumber field)
-   - Test playback in music player
-   - Original folders are preserved for verification
-
-5. **Handle Orphaned Discs**
-   - Rename with [Disc N] notation to indicate incomplete set
-   - Document as incomplete in issues report
-   - Keep in library until matching discs found
-
-### Disc Metadata Strategy
-
-- **Disc Number Field:** Store in `discnumber` tag (MP3: TPOS frame, M4A: disk tag)
-  - Format: "1/2", "2/2", "3/3", etc.
-- **Track Numbers:** Restart at 1 for each disc (Disc 1: 01-15, Disc 2: 01-16)
-- **Folder Structure:** Flat - all tracks in single folder, no disc subfolders
-- **File Naming:** No disc notation in filenames, disc info in metadata only
-
-### Music Player Compatibility
-
-Most music players support the `discnumber` field and can:
-- Display disc info in track listings
-- Group tracks by disc
-- Sort tracks correctly across discs
-- Show "Disc 1 of 2" in now-playing views
-
-**Supported Players:** iTunes, Plex, Jellyfin, foobar2000, MusicBee, VLC
-
-### Common Patterns Detected
-
-**True Multi-Disc Albums:**
-- "Album Name Disc 1" + "Album Name Disc 2" (sequential)
-- "Album Name CD1" + "Album Name CD2"
-- "Album Name [Disc 1]" + "Album Name [Disc 2]"
-
-**Compilation Series (NOT multi-disc):**
-- "Series Vol. 1", "Series Vol. 7" (non-sequential volumes)
-- "Now That's What I Call Music! 8, 11, 23" (separate albums in series)
-- Review carefully before consolidating
+> Moved to project memory: see `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\multidisc-consolidation.md` (indexed in MEMORY.md).
 
 ## Album and Filename Cleanup
 
-### Purpose
-Clean up album and file names by removing extra characters, fixing truncation, and standardizing separators.
-
-### Naming Conventions
-
-**Underscores:**
-- Subtitles: `Album_ Subtitle` → `Album: Subtitle`
-- Attribution: `Artist_ Album` → `Artist - Album`
-- Metadata: `Album_Year` → `Album (Year)`
-
-**Brackets vs Parentheses:**
-- Genres/Countries: `[Rock]`, `[UK]` → `(Rock)`, `(UK)` or remove
-- Disc Numbers: Keep `[Disc N]` to distinguish from other descriptors
-- Editions: `[Deluxe]` → `(Deluxe)`
-
-**Separators:**
-- Subtitles: Use colon → `Album: Subtitle`
-- Attribution: Use hyphen → `Artist - Album`
-- Lists: Use comma → `Vol. 1, Vol. 2`
-- Metadata: Use parentheses → `Album (Year)`
-
-### Workflow
-
-1. **Scan for Issues**
-   ```bash
-   python utilities/cleanup_names.py --scan "/path/to/music/Artist"
-   ```
-
-2. **Review Proposed Changes**
-   - Check `outputs/name_cleanup_report.json`
-   - Review albums needing cleanup
-   - Identify truncated names that need research
-   - Verify transformations are correct
-
-3. **Test on Single Album**
-   ```bash
-   # Dry-run first
-   python utilities/cleanup_names.py --clean "Album Name" --path "/path/to/music/Artist" --dry-run
-
-   # Apply changes
-   python utilities/cleanup_names.py --clean "Album Name" --path "/path/to/music/Artist"
-   ```
-
-4. **Apply Batch Changes**
-   ```bash
-   # Dry-run batch (preview all changes)
-   python utilities/cleanup_names.py --batch "/path/to/music/Artist" --dry-run
-
-   # Apply batch changes
-   python utilities/cleanup_names.py --batch "/path/to/music/Artist"
-   ```
-
-### Truncation Detection
-
-The script automatically detects albums with truncated names:
-- Names ending with incomplete words (e.g., "Wo" instead of "World")
-- Names ending with trailing underscores
-- Names ending with suspiciously short words
-
-**Example:**
-- Truncated: `Beginner's Guide to World Music_ 2006 Wo`
-- After cleanup: `Beginner's Guide to World Music: 2006 Wo` (still truncated)
-- Manual research needed to find full name
-
-### Example Transformations
-
-```
-Before: Absolute Dance_ Now & Then
-After:  Absolute Dance: Now & Then
-
-Before: Chillout 2000, Vol. 3_ Early Dawn Disc 3
-After:  Chillout 2000, Vol. 3: Early Dawn [Disc 3]
-
-Before: Best of the Rat Pack [Castle]
-After:  Best of the Rat Pack (Castle)
-
-Before: Asia Lounge_ Asian Flavoured Club Tunes
-After:  Asia Lounge: Asian Flavoured Club Tunes
-```
+> Moved to project memory: see `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\naming-conventions.md` (indexed in MEMORY.md).
 
 ## Best Practices
 
-### Metadata Management
-
-1. **Use Album Artist vs Artist appropriately**
-   - Album Artist: Main act (e.g., "U2")
-   - Artist: Performer on specific track (e.g., "Jimi Hendrix" for guest performances)
-   - Benefits: Keeps albums together while crediting collaborators
-
-2. **Genre standardization**
-   - Pick consistent genres: Rock, Pop, Live, House, etc.
-   - Avoid "Other" - choose the most specific applicable genre
-   - Live recordings should have Genre: "Live"
-
-3. **Preserve iTunes metadata**
-   - iTunNORM (Sound Check) - Volume normalization
-   - iTunSMPB (Gapless playback) - Critical for live albums
-   - COMM tags in MP3s - Technical encoding data
-   - Recommendation: **Keep these tags** unless you have specific reasons to remove
-
-4. **Cover art guidelines**
-   - Minimum resolution: 500x500 pixels
-   - Recommended: 1000x1000 or higher
-   - Format: JPEG for smaller files, PNG for quality
-   - Embed in files (don't rely on folder.jpg)
-
-### File Operations Safety
-
-1. **Always verify before deleting**
-   - Check track lengths to identify duplicates
-   - Verify against official sources (MusicBrainz, Discogs, iTunes)
-
-2. **Order of operations**
-   - Fix metadata first (reversible)
-   - Add cover art next (adds data only)
-   - Rename/delete files last (potentially destructive)
-
-3. **Backup critical changes**
-   - Before mass operations, backup the directory
-   - Keep CSV/JSON snapshots before major changes
-
-### Issue Tracking and Documentation
-
-**Issue Report Structure:**
-1. **Summary table** - Quick overview of problem types and counts
-2. **Detailed issues** - Each issue with file paths and recommendations
-3. **Album status** - Complete inventory with metadata completeness
-4. **Recommended actions** - Prioritized by impact (High/Medium/Low)
-5. **Sources** - Links to reference materials used
-
-**Best Practices:**
-- Create issue reports BEFORE making changes (baseline documentation)
-- Update reports after fixes (track progress)
-- Keep reports in `issues/` folder with consistent naming
-- Use markdown for readability and version control
-- Include file paths, current state, and target state
-
-**Example workflow:**
-```bash
-# 1. Initial audit
-python utilities/extract_metadata.py "/path/to/music/Artist"
-
-# 2. Create issues report
-# Review outputs/ and manually create issues/artist_library_issues.md
-
-# 3. Fix issues systematically
-# Work through High → Medium → Low priority items
-
-# 4. Update issue report with resolutions
-# Mark completed items, document changes made
-
-# 5. Re-audit and verify
-python utilities/extract_metadata.py "/path/to/music/Artist"
-```
-
-### Dealing with Bootlegs/Unofficial Releases
-
-**Identification markers:**
-- Incomplete metadata (missing dates, genres)
-- Low-quality cover art
-- Inconsistent track naming
-- Non-standard album titles
-
-**Recommendations:**
-1. Research on u2songs.com, Discogs, or MusicBrainz
-2. Categorize clearly (use Genre: "Live" for bootlegs)
-3. Fix metadata to match actual content
-4. Consider whether to keep or remove based on collection goals
-
----
+> Moved to project memory: see `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\best-practices.md` (indexed in MEMORY.md).
 
 ## Lessons Learned from Cleanup Sessions
 
-These insights were discovered during hands-on cleanup of 273 albums (4,762 tracks) in the Various Artists folder.
-
-### The Discovery Workflow
-
-When cleaning up a music library, we followed this repeatable workflow:
-
-```
-1. SCAN      → Run scan_folders.py to detect mismatched folders
-2. CATEGORIZE → Group issues by type (truncated, substitution, multi-disc, etc.)
-3. RESEARCH  → Use MusicBrainz/Discogs/iTunes to find correct album names
-4. FIX       → Apply fixes (rename folders, consolidate discs, update metadata)
-5. VERIFY    → Re-scan to confirm all issues resolved
-```
-
-### Issue Categories Discovered
-
-From 64 folder mismatches, we identified 4 distinct categories:
-
-| Category | Count | Pattern | Example |
-|----------|-------|---------|---------|
-| Truncated Names | 19 | Folder ends mid-word | `Putumayo Presents - Music from the Tea La` |
-| Character Substitutions | 11 | `_` instead of `:` or ` -` | `Shine_ The Complete Classics` |
-| Multi-Disc Albums | 8 | Same base name + disc indicator | `Album [Disc 1]`, `Album [Disc 2]` |
-| Missing Info | ~26 | Needs web research | Both folder and metadata incomplete |
-
-### Windows-Safe Transformations
-
-Characters that cause issues on Windows file systems:
-
-| Character | Replacement | Example |
-|-----------|-------------|---------|
-| `:` | ` -` | `Album: Subtitle` → `Album - Subtitle` |
-| `_` (as separator) | ` -` | `Album_ Subtitle` → `Album - Subtitle` |
-| `?` | Remove | `What?` → `What` |
-| `*` | Remove | `Star*` → `Star` |
-| `"` | Remove | `"Album"` → `Album` |
-| `<>` | Remove | `Album<1>` → `Album 1` |
-| `\|` | ` -` | `A\|B` → `A - B` |
-| Accents | ASCII equivalent | `Café` → `Cafe` |
-
-### Multi-Disc Consolidation Pattern
-
-The repeatable 4-step pattern for consolidating multi-disc albums:
-
-```python
-# Step 1: Add disc prefix to filenames
-# 01 Track.mp3 → 1-01 Track.mp3 (Disc 1)
-# 01 Track.mp3 → 2-01 Track.mp3 (Disc 2)
-
-# Step 2: Move all tracks to target folder
-# Move files from [Disc 1] and [Disc 2] to base folder
-
-# Step 3: Update metadata
-audio['album'] = "Album Name"  # Remove disc indicator
-audio['discnumber'] = "1/2"    # Set disc number (format: N/total)
-
-# Step 4: Clean up
-# Remove empty source folders
-# Keep folder.jpg in target (don't duplicate)
-```
-
-### Research Sources Priority
-
-When metadata is incomplete or truncated, use these sources in order:
-
-1. **MusicBrainz** - Most authoritative for album names and track listings
-2. **Discogs** - Good for compilations and rare releases
-3. **iTunes Search API** - Good for cover art (free, no auth required)
-4. **AllMusic** - Album credits and reviews
-
-### Cover Art Sources
-
-For embedding missing cover art, the iTunes API is preferred (high quality, free):
-
-```python
-# iTunes Search API
-url = f"https://itunes.apple.com/search?term={album}&media=music&entity=album"
-# In the response, replace "100x100" with "1200x1200" in artworkUrl100 field
-# This gives high-resolution cover art
-
-# Alternatives:
-# - MusicBrainz Cover Art Archive (free)
-# - Discogs API (requires token)
-```
-
-### Automation Insights
-
-What we learned about automation vs. manual work:
-
-| Task | Automatable? | How |
-|------|--------------|-----|
-| Detect truncated names | Yes | Compare folder length vs metadata length |
-| Fix truncated names | Partially | Use metadata if complete, else needs research |
-| Detect character substitutions | Yes | Pattern matching (`_` where metadata has `:`) |
-| Fix character substitutions | Yes | Apply transformation rules |
-| Detect multi-disc sets | Yes | Regex patterns: `[Disc N]`, `CD N`, etc. |
-| Consolidate multi-disc | Yes | Add prefix, move, update metadata |
-| Find correct album name | Sometimes | Web lookup, but may need human verification |
-| Embed cover art | Yes | iTunes API → download → embed |
-
-### Key Takeaways
-
-1. **Pattern Recognition**: Most issues fall into predictable categories that can be automated
-2. **Metadata is Gold**: When folder names are truncated, track metadata often has the complete album name
-3. **Research First**: For ambiguous cases, spend time researching before making changes
-4. **Verify After**: Always re-scan after batch operations to catch any issues
-5. **Document Changes**: Keep a record of what was fixed for future reference
-
-### Cover Art Verification (Lessons from Ben Harper Cleanup)
-
-**Problem Discovered:** Embedded cover art may be technically valid (good size,
-full coverage) but visually WRONG for the album.
-
-**Case Study - Ben Harper (2026-01-13):**
-
-| Album | Issue | Resolution |
-|-------|-------|------------|
-| Diamonds On The Inside | Wrong cover embedded (262KB, 100% coverage) | Re-embedded from iTunes |
-| Fight For Your Mind | Wrong cover embedded (357KB, 100% coverage) | Re-embedded from iTunes |
-| Welcome to the Cruel World | Correct | N/A |
-| Both Sides of the Gun | Correct | N/A |
-
-**Root Cause:** System accepted embedded art as "valid" because size/coverage
-checked out, without verifying the art actually matched the album.
-
-**Verification Workflow:**
-1. When processing cover art, save a preview to `outputs/cover_preview.jpg`
-2. Claude visually inspects the image during `/clean-music`
-3. Compares visible text/imagery against album metadata
-4. Flags mismatches for manual review
-
-**On-Demand Verification:**
-```bash
-# Verify all folder.jpg files in a path
-/verify-covers /path/to/music/Artist Name
-```
-
-**Manual Fix Commands:**
-```bash
-# Check what's currently embedded (syncs to folder.jpg)
-python utilities/embed_cover.py "path/to/album" --sync-folder
-
-# Search iTunes for correct cover
-python -c "import requests; r=requests.get('https://itunes.apple.com/search?term=Artist+Album&entity=album'); print([a['artworkUrl100'].replace('100x100','1200x1200') for a in r.json()['results'][:3]])"
-
-# Force replace with correct cover
-python utilities/embed_cover.py "path/to/album" "https://correct_cover_url" --force
-```
-
-**Key Takeaway:** Size and coverage validation is necessary but not sufficient.
-Visual verification catches cases where wrong art was previously embedded.
-
----
+> Moved to project memory: see `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\lessons-learned.md` (indexed in MEMORY.md).
 
 ## Common Issues and Solutions
 
-### Issue: Missing Cover Art
-**Solution:**
-1. Search iTunes Store, Amazon Music, or Discogs
-2. Download high-quality artwork
-3. Use `embed_cover.py` to embed in all tracks
-```bash
-python utilities/embed_cover.py "album/path" "cover_url_or_path"
-```
-
-### Issue: Inconsistent Genre Tags
-**Solution:**
-Use `batch_fix_metadata.py` for entire albums:
-```bash
-python utilities/batch_fix_metadata.py "album/path" "Rock"
-```
-
-### Issue: Title Typos
-**Solution:**
-Single-file fixes with `fix_metadata.py`:
-```bash
-python utilities/fix_metadata.py title "track/path" "Correct Title"
-```
-
-### Issue: Filename Watermarks (e.g., "track - music-madness.mp3")
-**Solution:**
-Python rename operation:
-```bash
-python -c "import os; os.rename('old_name.mp3', 'new_name.mp3')"
-```
-
-### Issue: Split Artist Entries (e.g., "U2 & Kygo" separate from "U2")
-**Analysis Required:**
-- Official collaborations: Keep split (correct metadata)
-- Should be same artist: Fix Album Artist field to group properly
-
-### Issue: Incomplete Albums
-**Steps:**
-1. Research complete tracklist on MusicBrainz
-2. Determine if missing tracks are essential
-3. Find missing tracks or accept incomplete album
-4. Document in issues report
+> Moved to project memory: see `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\troubleshooting.md` (indexed in MEMORY.md).
 
 ## Technical Details
 
@@ -1120,86 +715,11 @@ if not os.path.exists(kb_path):
 
 ## Extending the System
 
-### Adding New Metadata Fields
-
-To extract additional fields, modify `extract_metadata.py`:
-
-```python
-# In extract_metadata() function, add:
-result['new_field'] = audio.get('new_field', [None])[0]
-
-# In build_structured_json(), add to track data:
-'NewField': track_info.get('new_field')
-```
-
-### Creating New Utilities
-
-**Template for new script:**
-```python
-import sys
-from mutagen.mp3 import MP3
-from mutagen.easyid3 import EasyID3
-
-def process_file(filepath):
-    """Your processing logic"""
-    audio = MP3(filepath, ID3=EasyID3)
-    # Your code here
-    audio.save()
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <filepath>")
-        sys.exit(1)
-
-    filepath = sys.argv[1]
-    process_file(filepath)
-```
-
-### Scaling to Full Library
-
-When processing multiple artists:
-
-1. **Directory structure:**
-   ```
-   /music
-   ├── Artist 1/
-   ├── Artist 2/
-   └── Artist 3/
-   ```
-
-2. **Batch processing:**
-   ```bash
-   for artist in /music/*; do
-       python utilities/extract_metadata.py "$artist"
-   done
-   ```
-
-3. **Output organization:**
-   - Name outputs by artist: `artist_name_audit.json`
-   - Or create subdirectories: `outputs/Artist Name/`
+> Moved to project memory: see the extension and scaling notes under `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\` (indexed in MEMORY.md).
 
 ## U2 Library Case Study
 
-### Project Statistics
-- **Total tracks processed:** 261
-- **Albums:** 20 official + 3 live bootlegs + 2 collaboration tracks
-- **Issues resolved:** 20+ (cover art, metadata, typos, genres)
-- **Time investment:** ~3-4 hours for complete audit and cleanup
-- **Documentation:** See `issues/u2_library_issues.md` for detailed audit report
-
-### Key Learnings
-
-1. **Bootleg identification** - Research is essential
-2. **Artist split tags** - Critical for proper organization
-3. **iTunes metadata preservation** - Important for playback quality
-4. **Systematic approach** - Metadata → Cover art → Files (in that order)
-5. **Verification loops** - Always re-audit after changes
-6. **Issues tracking** - Maintain detailed markdown reports for future reference
-
-### Before/After
-- **Before:** 10 albums missing cover art, genre inconsistencies, typos, watermarks
-- **After:** All 261 tracks with cover art, standardized metadata, clean filenames
-- **Artifacts:** JSON/CSV exports in `outputs/`, detailed report in `issues/`
+> Moved to project memory: see `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\u2-case-study.md` (indexed in MEMORY.md).
 
 ## Future Enhancements
 
@@ -1236,6 +756,15 @@ When processing multiple artists:
 - [MusicBrainz Forums](https://community.metabrainz.org/) - Metadata best practices
 
 ## Changelog
+
+### 2026-06-27 (Docs slim + cover-art core)
+- **Slimmed CLAUDE.md**: Moved large reference sections (Lessons Learned, U2
+  Case Study, Best Practices, Multi-Disc background, Naming Conventions, Common
+  Issues, Extending) into project memory; left pointers indexed in MEMORY.md.
+- **Cover Art Validation (core)**: Documented that all cover/image logic now
+  routes through `utilities/core/cover_art.py` (validated embeds, Pillow +
+  ffprobe ground truth, post-write dims check) which fixed the width=0/height=0
+  art Jellyfin reported.
 
 ### 2026-01-13 (v4.0 - Major Refactoring)
 - **Unified CLI**: Created `cli.py` as single entry point for all operations
@@ -1294,7 +823,7 @@ The project has solid AI infrastructure but currently uses Claude primarily as a
 ### Identified Gaps
 
 #### 1. Claude Agents Underutilized
-The `.claude/agents/` folder contains 5 detailed agent definitions (metadata_validator, conflict_resolver, etc.), and `orchestrator/claude_agents.py` has infrastructure to invoke them. However, the main workflows don't actively call Claude for decisions—the agents function more as documentation than active components.
+The `.claude/agents/` folder contains 5 detailed agent definitions (metadata_validator, conflict_resolver, etc.), and `orchestrator/claude_agents.py` has infrastructure to invoke them. However, the main workflows don't actively call Claude for decisions; the agents function more as documentation than active components.
 
 #### 2. No Learning/Feedback Loop
 - The Ben Harper cover art issue (wrong covers embedded for unknown duration) highlighted this gap
@@ -1422,7 +951,7 @@ python -c "import os; os.rename('old.mp3', 'new.mp3')"
 
 ---
 
-**Last Updated:** 2026-01-13
+**Last Updated:** 2026-06-27
 **Project Status:** Active Development (v4.0)
 **Current Focus:** Various Artists folder organization and cleanup (273 albums, 4,762 tracks)
 **Completed:** U2 library (261 tracks), Various Artists folder reorganization (Holiday/Soundtracks), Project refactoring
