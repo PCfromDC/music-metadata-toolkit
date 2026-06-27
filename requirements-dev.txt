@@ -1,0 +1,9 @@
+# Development/test dependencies for the Music Metadata Toolkit.
+# Install the runtime deps first:  pip install -r requirements.txt
+# Then the dev deps:               pip install -r requirements-dev.txt
+#
+# The test fixtures synthesize real MP3/M4A/FLAC streams with the bundled
+# ffmpeg/ffprobe from static-ffmpeg (a runtime dependency, downloaded on first
+# use), so no extra audio tooling is required here.
+pytest>=8.0
+pytest-cov>=5.0
