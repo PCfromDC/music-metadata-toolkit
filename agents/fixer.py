@@ -27,6 +27,11 @@ from mutagen.id3 import ID3, APIC
 
 from .base import BaseAgent
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utilities.core import cover_art
+from utilities.core.cover_art import InvalidCoverArt
+
 
 @dataclass
 class FixResult:
@@ -272,132 +277,34 @@ class FixerAgent(BaseAgent):
         return name
 
     def _embed_cover_art(self, album_path: str, cover_url: str) -> Optional[Dict[str, Any]]:
-        """
-        Download and embed cover art into all audio files.
+        """Download and embed validated cover art into all audio files.
 
-        Args:
-            album_path: Path to album folder
-            cover_url: URL to cover art image
-
-        Returns:
-            Change record or None
+        Routes through utilities.core.cover_art, which rejects empty/corrupt
+        images before embedding (prevents the width=0/height=0 art that Jellyfin
+        flagged) and verifies each write with ffprobe.
         """
         if not cover_url:
             return None
 
-        self.log(f"  Downloading cover art...")
-
-        # Download image
+        self.log("  Downloading cover art...")
         try:
-            response = requests.get(cover_url, timeout=60)
-            response.raise_for_status()
-            image_data = response.content
+            image_data = cover_art.download_cover(cover_url)
+        except InvalidCoverArt as e:
+            raise Exception(f"Cover download/validation failed: {e}")
 
-            # Detect image type
-            if response.headers.get('content-type', '').startswith('image/png'):
-                mime_type = 'image/png'
-            else:
-                mime_type = 'image/jpeg'
-
-        except requests.RequestException as e:
-            raise Exception(f"Download failed: {e}")
-
-        # Embed in all audio files
-        path = Path(album_path)
-        audio_files = list(path.glob('*.mp3')) + list(path.glob('*.m4a')) + list(path.glob('*.flac'))
-
-        embedded_count = 0
-        for audio_file in audio_files:
-            try:
-                self._embed_cover_in_file(audio_file, image_data, mime_type)
-                embedded_count += 1
-            except Exception as e:
-                self.log(f"    Failed to embed in {audio_file.name}: {e}")
-
-        # Also save as folder.jpg
-        folder_jpg = path / 'folder.jpg'
-        try:
-            with open(folder_jpg, 'wb') as f:
-                f.write(image_data)
-            self.log(f"  Saved folder.jpg")
-        except:
-            pass
-
-        self.log(f"  Embedded cover in {embedded_count}/{len(audio_files)} files")
+        result = cover_art.embed_in_album(album_path, image_data)
+        for error in result["errors"]:
+            self.log(f"    Failed to embed in {error}")
+        self.log(f"  Embedded cover in {result['embedded']}/{result['total']} files")
 
         return {
             "type": "cover_art",
             "field": "cover_art",
             "old_value": None,
-            "new_value": f"embedded in {embedded_count} files",
+            "new_value": f"embedded in {result['embedded']} files",
             "source_url": cover_url,
-            "status": "applied"
+            "status": "applied",
         }
-
-    def _embed_cover_in_file(self, filepath: Path, image_data: bytes, mime_type: str) -> None:
-        """Embed cover art in a single audio file"""
-        ext = filepath.suffix.lower()
-
-        if ext == '.mp3':
-            self._embed_cover_mp3(filepath, image_data, mime_type)
-        elif ext == '.m4a':
-            self._embed_cover_m4a(filepath, image_data)
-        elif ext == '.flac':
-            self._embed_cover_flac(filepath, image_data, mime_type)
-
-    def _embed_cover_mp3(self, filepath: Path, image_data: bytes, mime_type: str) -> None:
-        """Embed cover in MP3 file"""
-        try:
-            audio = MP3(str(filepath))
-            if audio.tags is None:
-                audio.add_tags()
-        except:
-            audio = MP3(str(filepath))
-            audio.add_tags()
-
-        # Remove existing cover art
-        audio.tags.delall('APIC')
-
-        # Add new cover
-        audio.tags.add(
-            APIC(
-                encoding=3,  # UTF-8
-                mime=mime_type,
-                type=3,  # Front cover
-                desc='Cover',
-                data=image_data
-            )
-        )
-        audio.save()
-
-    def _embed_cover_m4a(self, filepath: Path, image_data: bytes) -> None:
-        """Embed cover in M4A file"""
-        audio = MP4(str(filepath))
-
-        # Detect format
-        if image_data[:8] == b'\x89PNG\r\n\x1a\n':
-            cover = MP4Cover(image_data, imageformat=MP4Cover.FORMAT_PNG)
-        else:
-            cover = MP4Cover(image_data, imageformat=MP4Cover.FORMAT_JPEG)
-
-        audio.tags['covr'] = [cover]
-        audio.save()
-
-    def _embed_cover_flac(self, filepath: Path, image_data: bytes, mime_type: str) -> None:
-        """Embed cover in FLAC file"""
-        audio = FLAC(str(filepath))
-
-        # Create picture
-        picture = Picture()
-        picture.type = 3  # Front cover
-        picture.mime = mime_type
-        picture.desc = 'Cover'
-        picture.data = image_data
-
-        # Remove existing pictures and add new
-        audio.clear_pictures()
-        audio.add_picture(picture)
-        audio.save()
 
     def _update_genre(self, album_path: str, new_genre: str) -> Optional[Dict[str, Any]]:
         """Update genre for all tracks in album"""
