@@ -174,6 +174,37 @@ This is the exact pass run on the reference library: validated to **100% ffprobe
 > Background: project memory `cover-art-validation.md`, `jellyfin-ffprobe-truth.md`,
 > and `cover-remediation-method.md`. Full validator guide: [`docs/AI_VALIDATORS.md`](docs/AI_VALIDATORS.md).
 
+## De-duplication
+
+Run **after** validation (so each file's identity and quality are known) and **before**
+the cover-art pass:
+
+```
+scan -> validate (track ID + album) -> DE-DUPE -> cover art
+```
+
+`cli.py dedupe` finds duplicate copies of the same track **within an album folder**,
+keeps the best one (higher bitrate -> has embedded art -> no watermark/copy suffix ->
+larger size), and **moves the losers to an off-library backup - it never deletes**.
+
+- **Matching:** same normalized title in a folder, confirmed by identical Chromaprint
+  fingerprint or duration within ±3s = **strong** (auto-moved); within ±10s =
+  **probable** (review only). Copy suffixes (`Song 2`, `Song (2)`) are stripped;
+  **distinct versions** (live / remix / remaster) are never merged unless `--aggressive`.
+- **Cross-album** "duplicates" (the same song on several albums) are written to a review
+  report, never auto-moved - that's usually intentional.
+- Fingerprinting (fpcalc) is on by default and applied only to candidate groups. Strong
+  moves are logged to `outputs/dedupe_moved.log` for undo.
+
+```bash
+python cli.py dedupe "/path/to/Music" --scan-only                                  # report duplicate groups
+python cli.py dedupe "/path/to/Music" --dry-run                                    # keep/move plan, no writes
+python cli.py dedupe "/path/to/Music" --backup-dir "D:/music_backup/_duplicates" --execute
+```
+
+Mirrors `.claude/agents/duplicate_detector.md`; Claude can adjudicate ambiguous/probable
+groups, while this Python tool does the deterministic detection and safe moves.
+
 ## Project Structure
 
 ```
@@ -226,6 +257,8 @@ D:\music cleanup\
 │   ├── track_mover.py          # Move tracks between albums
 │   ├── embed_cover.py          # Cover art embedding
 │   ├── generate_folder_art.py  # Write folder.jpg from embedded art (additive)
+│   ├── repair_covers.py        # Re-fetch/re-embed corrupt or wrong covers
+│   ├── deduplicate.py          # Duplicate tracks -> backup (validate first; never deletes)
 │   ├── core/                   # Validated cover-art pipeline (cover_art, ffprobe)
 │   ├── fix_metadata.py
 │   ├── batch_fix_metadata.py
@@ -367,6 +400,8 @@ The system uses confidence scoring to determine automation level:
 | `consolidate <path>` | Find and consolidate multi-disc albums |
 | `move-track <src> <dest>` | Move track with metadata update |
 | `embed-cover <path> <url>` | Embed cover art |
+| `repair-covers <path>` | Detect + re-embed corrupt/missing embedded art |
+| `dedupe <path>` | Move duplicate tracks to backup (validate first; never deletes) |
 | `status` | Show processing status |
 | `resume` | Resume interrupted session |
 
