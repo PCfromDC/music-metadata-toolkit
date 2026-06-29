@@ -137,6 +137,13 @@ def cmd_dedupe(args):
         print("(dry-run - no changes made)")
 
 
+def cmd_lifecycle(args):
+    """Run the full lifecycle pipeline (scan->identify->validate->dedupe->covers->fix)."""
+    from orchestrator.main import cmd_lifecycle as _orchestrator_lifecycle
+
+    return _orchestrator_lifecycle(args)
+
+
 def cmd_status(args):
     """Show processing status."""
     from orchestrator.state import SessionState
@@ -220,6 +227,24 @@ def main():
                                help='also group remaster/version variants and move probable matches')
     dedupe_parser.add_argument('--no-fingerprint', action='store_true', help='match on metadata only (skip fpcalc)')
     dedupe_parser.set_defaults(func=cmd_dedupe)
+
+    # lifecycle command
+    lifecycle_parser = subparsers.add_parser(
+        'lifecycle', help='Run the full pipeline: scan->identify->validate->dedupe->covers->fix')
+    lifecycle_parser.add_argument('path', help='Library / artist / album folder to process')
+    lifecycle_parser.add_argument('--scan-only', action='store_true',
+                                  help='report only; never modify anything')
+    lifecycle_parser.add_argument('--dry-run', action='store_true',
+                                  help='preview the plan without writing (default)')
+    lifecycle_parser.add_argument('--execute', action='store_true',
+                                  help='apply changes (the only mode that writes to music)')
+    lifecycle_parser.add_argument('--backup-dir', default=r'D:\music_backup\_duplicates',
+                                  help='where dedupe moves losing duplicates')
+    lifecycle_parser.add_argument('--aggressive', action='store_true',
+                                  help='dedupe also groups remaster/version variants')
+    lifecycle_parser.add_argument('--no-fingerprint', action='store_true',
+                                  help='dedupe matches on metadata only (skip fpcalc)')
+    lifecycle_parser.set_defaults(func=cmd_lifecycle)
 
     # status command
     status_parser = subparsers.add_parser('status', help='Show processing status')

@@ -107,6 +107,63 @@ class ValidatorAgent(BaseAgent):
     def name(self) -> str:
         return "Validator"
 
+    # ------------------------------------------------------------------
+    # AcoustID song-ID hook (best-effort; never blocks the pipeline)
+    # ------------------------------------------------------------------
+    def _get_acoustid(self):
+        """Lazily build an AcoustIDSource; returns None if it cannot init.
+
+        Kept lazy so constructing a ValidatorAgent never shells out to fpcalc;
+        the binary probe only happens the first time identification is attempted.
+        """
+        if not hasattr(self, "_acoustid"):
+            try:
+                from sources.acoustid import AcoustIDSource
+
+                api_key = ""
+                getter = getattr(self.config, "get_credential", None)
+                if callable(getter):
+                    api_key = getter("acoustid.api_key") or ""
+                self._acoustid = AcoustIDSource(
+                    api_key=api_key,
+                    rate_limit=self.config.get("api.acoustid.rate_limit", 0.33),
+                )
+            except Exception:
+                self._acoustid = None
+        return self._acoustid
+
+    def identify_unknown_tracks(self, album_path: str, max_tracks: int = 3) -> List[Dict[str, Any]]:
+        """Best-effort AcoustID identification for unknown / low-confidence albums.
+
+        Fingerprints up to ``max_tracks`` tracks in ``album_path`` and looks them
+        up in AcoustID, returning a list of confident hits
+        (``{file, confidence, recording_id, title, artist, releases}``).
+
+        Completely fail-soft: returns ``[]`` when there is no API key, no
+        ``fpcalc`` binary, or anything raises. It never blocks the pipeline.
+        """
+        try:
+            src = self._get_acoustid()
+            if src is None or not src.is_available():
+                return []
+
+            from utilities.core.audio_file import iter_audio_files
+
+            hits: List[Dict[str, Any]] = []
+            for i, track in enumerate(iter_audio_files(album_path)):
+                if i >= max_tracks:
+                    break
+                try:
+                    info = src.identify_track(str(track))
+                except Exception:
+                    info = None
+                if info:
+                    hits.append({"file": str(track), **info})
+            return hits
+        except Exception as exc:  # never propagate - identification is best-effort
+            self.log(f"AcoustID identify skipped: {exc}")
+            return []
+
     def process(self, item: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process a single album for validation.

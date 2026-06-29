@@ -82,6 +82,55 @@ D:\music cleanup\
 
 The project now includes a unified CLI entry point for all operations.
 
+### The Lifecycle Command (headline workflow)
+
+`python cli.py lifecycle <path>` runs every phase in one fixed, canonical order:
+
+```
+scan -> identify -> validate -> dedupe -> covers -> fix
+```
+
+The phase order is defined once, in the module-level constant `LIFECYCLE_PHASES`
+in `orchestrator/main.py` (`from orchestrator.main import LIFECYCLE_PHASES`). This
+is the single parity anchor; do not redefine it elsewhere.
+
+```bash
+python cli.py lifecycle "//192.168.1.252/music" --scan-only   # report only, touch nothing
+python cli.py lifecycle "//192.168.1.252/music" --dry-run     # preview the plan (DEFAULT)
+python cli.py lifecycle "//192.168.1.252/music" --execute     # the only mode that writes to music
+python cli.py lifecycle "//192.168.1.252/music" --execute --backup-dir "D:/music_backup/_duplicates"
+python cli.py lifecycle "//192.168.1.252/music" --execute --aggressive      # dedupe also groups version variants
+python cli.py lifecycle "//192.168.1.252/music" --execute --no-fingerprint  # dedupe on metadata only
+```
+
+| Phase | Description |
+|-------|-------------|
+| **scan** | ScannerAgent reads tags, counts tracks, flags missing covers / metadata issues. |
+| **identify** | Best-effort AcoustID song-ID for weak/unknown tracks; fail-soft no-op with no API key or fpcalc. |
+| **validate** | ValidatorAgent cross-checks MusicBrainz / iTunes, scores confidence, routes to auto-apply or review. |
+| **dedupe** | Within-album duplicate tracks; best kept, losers moved to backup (never deletes). |
+| **covers** | ffprobe-validate embedded art, repair broken/missing art, write `folder.jpg` where missing. |
+| **fix** | FixerAgent applies approved metadata/cover corrections (execute only). |
+
+**Safety model (all phases):** `--scan-only` / `--dry-run` (DEFAULT) / `--execute`.
+Music is written ONLY under `--execute`. Duplicates are moved to an off-library
+backup, never deleted. Cover art is validated with `ffprobe` (the engine Jellyfin
+uses) before and after writing.
+
+**Queue strategy (fresh per run).** At the start of each lifecycle run, if
+`state/queue.json` is non-empty it is archived to
+`state/history/queue-<YYYYMMDD-HHMMSS>.json` (`QueueManager.archive`) and then
+cleared, so runs never contaminate each other. At the end, a dated run summary is
+appended to `state/run_history.json` (`orchestrator/run_history.append_run`).
+
+**Two orchestrators, one behavior (parity).** `cmd_lifecycle` is implemented in
+`orchestrator/main.py` (real impl) and exposed as a thin wrapper in `cli.py` that
+delegates to it. `python cli.py lifecycle` and `python -m orchestrator.main
+lifecycle` register identical flags (`path`, `--scan-only`, `--dry-run`,
+`--execute`, `--backup-dir`, `--aggressive`, `--no-fingerprint`) and produce
+identical results. In Claude Code, `/lifecycle "<library>"` and the autonomous
+`/clean-music "<library>"` run the same pipeline with AI judgment added.
+
 ### Quick Start
 
 ```bash
@@ -111,6 +160,7 @@ python cli.py resume
 
 | Command | Description | Options |
 |---------|-------------|---------|
+| `lifecycle <path>` | Run the full pipeline scan -> identify -> validate -> dedupe -> covers -> fix | `--scan-only`, `--dry-run` (default), `--execute`, `--backup-dir`, `--aggressive`, `--no-fingerprint` |
 | `scan <path>` | Extract metadata from albums | `--artist`, `--dry-run` |
 | `validate <path>` | Validate and fix folder names | `--scan-only`, `--dry-run` |
 | `consolidate <path>` | Find and consolidate multi-disc albums | `--scan-only`, `--dry-run` |
@@ -824,6 +874,25 @@ if not os.path.exists(kb_path):
 - [MusicBrainz Forums](https://community.metabrainz.org/) - Metadata best practices
 
 ## Changelog
+
+### 2026-06-29 (Unified lifecycle + zero-knowledge onboarding)
+- **Unified `lifecycle` command**: `python cli.py lifecycle <path>` (and
+  `python -m orchestrator.main lifecycle`) runs every phase in one canonical order
+  scan -> identify -> validate -> dedupe -> covers -> fix. Phase order is anchored
+  by the module-level `LIFECYCLE_PHASES` constant in `orchestrator/main.py`.
+- **Two-orchestrator parity**: `cli.py` exposes a thin wrapper that delegates to
+  the real `cmd_lifecycle` in `orchestrator/main.py`; both register identical flags
+  (`--scan-only`, `--dry-run` default, `--execute`, `--backup-dir`, `--aggressive`,
+  `--no-fingerprint`) and produce identical results.
+- **Queue strategy (fresh per run)**: each run archives a non-empty
+  `state/queue.json` to `state/history/queue-<timestamp>.json` then clears it, and
+  appends a dated run summary to `state/run_history.json`.
+- **New `docs/GETTING_STARTED.md`**: zero-knowledge onboarding covering both Path A
+  (plain Python) and Path B (Claude Code `/lifecycle` / `/clean-music`),
+  prerequisites + one pip line, the six phases, dry-run-first safety, never-delete
+  dedupe, and ffprobe cover validation.
+- **README**: added a top Quickstart and a "Unified Lifecycle" headline section
+  linking to the getting-started guide.
 
 ### 2026-06-29 (De-duplication utility + docs)
 - **New `utilities/deduplicate.py` + `cli.py dedupe`**: first-class, safe de-dup that

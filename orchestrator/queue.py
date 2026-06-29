@@ -6,6 +6,7 @@ Manages album processing order and status tracking.
 """
 
 import json
+import shutil
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -211,6 +212,33 @@ class QueueManager:
                 count += 1
 
         return count
+
+    def archive(self, history_dir, timestamp: Optional[str] = None) -> Optional[Path]:
+        """Copy the current queue.json to ``<history_dir>/queue-<timestamp>.json``.
+
+        Used by the lifecycle runner to preserve the previous run's queue before
+        clearing it for a fresh run. No-op (returns ``None``) when the queue is
+        empty or the queue file is missing on disk.
+
+        Args:
+            history_dir: Directory to write the archived copy into (created if
+                needed).
+            timestamp: Optional ``YYYYMMDD-HHMMSS`` stamp; defaults to now.
+
+        Returns:
+            The archived file Path, or ``None`` if nothing was archived.
+        """
+        if not self._queue or not self.queue_path.exists():
+            return None
+
+        if timestamp is None:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+        history_path = Path(history_dir)
+        history_path.mkdir(parents=True, exist_ok=True)
+        dest = history_path / f"queue-{timestamp}.json"
+        shutil.copy2(self.queue_path, dest)
+        return dest
 
     def clear(self) -> None:
         """Clear the entire queue"""
