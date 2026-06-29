@@ -166,7 +166,22 @@ def cmd_resume(args):
     orchestrator.resume()
 
 
+def _force_utf8_console():
+    """Make stdout/stderr UTF-8 so printing non-ASCII tags never crashes the run.
+
+    On Windows the console/redirected pipe defaults to cp1252; printing an album or
+    artist name with characters outside it raises UnicodeEncodeError and aborts the
+    pipeline. errors='replace' keeps output flowing.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
 def main():
+    _force_utf8_console()
     parser = argparse.ArgumentParser(
         prog='music-clean',
         description='Music Library Cleanup CLI',

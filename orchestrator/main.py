@@ -847,6 +847,11 @@ def cmd_resume(args):
 
 def main():
     """Main entry point"""
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
     parser = argparse.ArgumentParser(
         prog='music-clean',
         description='Music Library Cleanup Orchestrator'
