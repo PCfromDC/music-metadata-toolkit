@@ -1,6 +1,6 @@
 # Music Library Metadata Management System
 
-A comprehensive Python-based toolset for auditing, cleaning, and maintaining music library metadata. Built and tested through the complete cleanup of a 261-track U2 collection and 273-album Various Artists folder (4,762 tracks).
+A comprehensive Python-based toolset for auditing, cleaning, and maintaining music library metadata. Tested end to end on a **15,000+ track / 1,600+ album** library (covers validated 100% against ffprobe - the same engine Jellyfin uses).
 
 ## Quick Start
 
@@ -18,39 +18,54 @@ cp configs/templates/credentials.yaml.example configs/active/credentials.yaml
 
 See `configs/README.md` for details on each service.
 
-### Using the CLI
+## Scanning a Library (With and Without Claude)
 
+The toolkit works two ways. The Python core is **100% standalone** - no Claude, no
+network beyond optional metadata lookups. Claude Code adds AI decision-making and
+visual cover verification *on top of* the same core, so output is identical in
+format; Claude just adds judgment calls a script can't make (which source to trust,
+is this the right cover). Point either at a single artist folder **or your whole
+library root**.
+
+### Without Claude - pure Python
+
+**Targeted, per artist/album, via `cli.py`:**
 ```bash
-# Scan and extract metadata
-python cli.py scan "/path/to/music/Artist Name"
+pip install mutagen requests pillow static-ffmpeg pyyaml
 
-# Validate folder names against metadata (auto-fixes)
-python cli.py validate "/path/to/music/Artist Name"
+python cli.py scan          "/path/to/Music"                 # extract metadata, audit, report
+python cli.py validate      "/path/to/Music"                 # detect + auto-fix folder-name issues
+python cli.py consolidate   "/path/to/Music"                 # merge multi-disc sets
+python cli.py repair-covers "/path/to/Music"                 # detect + re-embed corrupt/missing art
+python cli.py embed-cover   "/path/to/Music/Artist/Album" "https://.../cover.jpg"
 
-# Consolidate multi-disc albums
-python cli.py consolidate "/path/to/music/Artist Name"
-
-# Move a track to another album
-python cli.py move-track "path/to/track.mp3" "path/to/dest/album" --album "Album Name" --artist "Artist"
-
-# Embed cover art
-python cli.py embed-cover "path/to/album" "https://example.com/cover.jpg"
+# Write folder.jpg from each album's embedded art where missing (additive, safe):
+python utilities/generate_folder_art.py "/path/to/Music" --scan-only   # preview
+python utilities/generate_folder_art.py "/path/to/Music" --execute     # write where missing
 ```
 
-### Using Claude Commands (Fully Autonomous)
-
+**Whole-library, stateful workflow, via the orchestrator** (scan -> review -> apply,
+with confidence scoring and resumable state):
 ```bash
-# Complete cleanup workflow - no prompts required
-/clean-music /path/to/music/Various Artists
+python -m orchestrator.main init     "/path/to/Music"   # register the library
+python -m orchestrator.main scan                         # extract metadata + detect issues
+python -m orchestrator.main validate                     # cross-check vs MusicBrainz / iTunes
+python -m orchestrator.main review                       # inspect uncertain matches
+python -m orchestrator.main fix --dry-run                # preview every change
+python -m orchestrator.main fix                          # apply
+python -m orchestrator.main status                       # progress; resume anytime
+```
 
-# Validate and fix folder names
-/validate-folders /path/to/music/Artist Name
+### With Claude - AI-assisted (run inside Claude Code)
 
-# Find and consolidate all multi-disc albums
-/consolidate-all /path/to/music/Various Artists
-
-# Move track between albums (interactive)
-/move-track "path/to/track.mp3" "path/to/dest"
+Same operations, but Claude resolves cross-source conflicts and **visually verifies**
+cover art (catching covers that are technically valid but wrong for the album):
+```bash
+/clean-music      "/path/to/Music/Various Artists"   # autonomous end-to-end, no prompts
+/verify-covers    "/path/to/Music/Various Artists"   # AI vision: does the art match the album?
+/validate-folders "/path/to/Music/Artist"            # fix folder-name mismatches
+/consolidate-all  "/path/to/Music/Various Artists"   # find + merge every multi-disc set
+/repair-covers    "/path/to/Music/Artist"            # re-fetch / re-embed bad covers
 ```
 
 ## Project Structure
@@ -384,4 +399,4 @@ See [`docs/AI_VALIDATORS.md`](docs/AI_VALIDATORS.md) for the full guide.
 ---
 
 **Status:** Active Development
-**Last Updated:** 2026-01-13
+**Last Updated:** 2026-06-29
