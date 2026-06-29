@@ -19,6 +19,10 @@ logs/
 # Generated outputs (reports, audits)
 outputs/
 
+# Per-run working data / personal library reports (album lists, candidate
+# manifests, audit reports). May contain library paths/host info - never commit.
+issues/
+
 # Python
 __pycache__/
 *.pyc

@@ -44,6 +44,9 @@ D:\music cleanup\
 │   ├── fix_metadata.py         # Single-file metadata fixes
 │   ├── batch_fix_metadata.py   # Batch metadata operations
 │   ├── embed_cover.py          # Cover art embedding
+│   ├── generate_folder_art.py  # Write folder.jpg from embedded art (additive)
+│   ├── repair_covers.py        # Re-fetch/re-embed corrupt or wrong covers
+│   ├── core/                   # Validated cover-art pipeline (cover_art, ffprobe, ...)
 │   └── consolidate_multidisc.py# Multi-disc consolidation
 │
 ├── configs/                    # YAML configurations
@@ -464,6 +467,40 @@ previously "valid-looking" files. Background and rationale:
 > See project memory: `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\cover-art-validation.md`
 > and `C:\Users\Admin\.claude\projects\D--music-cleanup\memory\jellyfin-ffprobe-truth.md` (indexed in MEMORY.md).
 
+### generate_folder_art.py (folder.jpg from embedded art)
+
+**Purpose:** create a `folder.jpg` / `folder.png` (the image Jellyfin and most
+scanners prefer for album art) for albums that have valid *embedded* art but no
+folder image. Reads embedded art only; never modifies audio files.
+
+**Safety contract (additive + non-regressing):**
+- Writes ONLY where no `folder.jpg`/`cover.jpg`/`front.jpg` exists; exclusive
+  create (`open(..., 'xb')`) so a concurrently-created image is never overwritten.
+- Validates each image via `core.cover_art.validate_image` (magic bytes + Pillow
+  decode + dims>0) AND confirms it is ffmpeg-readable via
+  `core.ffprobe.attached_pic_dims` before writing; non-JPEG/PNG or
+  ffmpeg-unreadable art is salvaged by re-encoding to a clean JPEG.
+- Post-write read-back re-probes the saved file; a truncated/corrupt write is
+  deleted and reported (never logged as success).
+- Degrades gracefully when ffprobe/`static-ffmpeg` is unavailable (falls back to a
+  Pillow decode check) instead of failing every album.
+- Scans all tracks for embedded art (not just track 1); extension matches the
+  detected content (`folder.png` for PNG bytes). Per-album fail-soft; created
+  paths are appended to `outputs/folderjpg_created.log` for undo.
+
+```bash
+# Preview which albums are missing a folder image (no reads of art, no writes)
+python utilities/generate_folder_art.py "/path/to/Music" --scan-only
+
+# Validate every candidate's embedded art (writes nothing)
+python utilities/generate_folder_art.py "/path/to/Music" --dry-run
+
+# Write the folder image where missing (additive, logged)
+python utilities/generate_folder_art.py "/path/to/Music" --execute
+```
+
+> Method/rationale in project memory: `cover-remediation-method.md` (indexed in MEMORY.md).
+
 ---
 
 ## YAML Configuration System
@@ -757,6 +794,26 @@ if not os.path.exists(kb_path):
 
 ## Changelog
 
+### 2026-06-28 (Full-library cover sweep + folder.jpg generator)
+- **Library-wide cover remediation**: validated/repaired covers across the whole
+  library; missing-art list driven from 137 to 0. Wrong-but-unfindable covers were
+  blanked (art backed up); branded/soundtrack covers recovered via iTunes → Discogs
+  API → MusicBrainz Cover Art Archive; many albums retitled to match the actual CD.
+  Method captured in project memory `cover-remediation-method.md`.
+- **New `utilities/generate_folder_art.py`**: additive generator that writes
+  `folder.jpg`/`folder.png` from each album's validated embedded art for albums that
+  lacked a folder image (600 generated). Additive-only (never overwrites), no audio
+  writes, validates + ffmpeg-verifies before and after write, graceful ffprobe
+  fallback. Hardened per code review (exclusive create, post-write read-back,
+  all-tracks art scan, salvage re-encode, per-process temp, fail-soft + undo log).
+- **Repo hygiene (public)**: `issues/` (per-run working data: album lists, candidate
+  manifests, audit reports) added to `.gitignore`; private host IP scrubbed from
+  tooling. Secrets scan clean - no tokens/keys/emails in tracked files.
+- **Backups cleanup**: removed 795 redundant in-album `backups/` folders (~39 GB
+  reclaimed) after verifying every backed-up song was present in its album.
+- **Eradicated the last `width=0`**: one album with a malformed APIC (Pillow-OK but
+  ffmpeg 0x0) re-embedded through the validated core; library now 100% ffprobe-clean.
+
 ### 2026-06-27 (Docs slim + cover-art core)
 - **Slimmed CLAUDE.md**: Moved large reference sections (Lessons Learned, U2
   Case Study, Best Practices, Multi-Disc background, Naming Conventions, Common
@@ -951,8 +1008,8 @@ python -c "import os; os.rename('old.mp3', 'new.mp3')"
 
 ---
 
-**Last Updated:** 2026-06-27
+**Last Updated:** 2026-06-28
 **Project Status:** Active Development (v4.0)
-**Current Focus:** Various Artists folder organization and cleanup (273 albums, 4,762 tracks)
-**Completed:** U2 library (261 tracks), Various Artists folder reorganization (Holiday/Soundtracks), Project refactoring
-**Next Target:** Full music library expansion
+**Current Focus:** Full-library maintenance - covers validated 100% (1,636 albums / 15,860 tracks), folder.jpg coverage 100%, 0 width=0
+**Completed:** U2 library (261 tracks), full-library cover remediation (missing-art 137 to 0), folder.jpg generator, 795 backups folders reclaimed (~39 GB), secrets/repo hygiene pass
+**Next Target:** Optional - per-track artist/title tagging for DJ-mix compilations; ongoing new-music intake

@@ -104,6 +104,8 @@ D:\music cleanup\
 │   ├── disc_consolidator.py    # Multi-disc consolidation
 │   ├── track_mover.py          # Move tracks between albums
 │   ├── embed_cover.py          # Cover art embedding
+│   ├── generate_folder_art.py  # Write folder.jpg from embedded art (additive)
+│   ├── core/                   # Validated cover-art pipeline (cover_art, ffprobe)
 │   ├── fix_metadata.py
 │   ├── batch_fix_metadata.py
 │   └── scan_folders.py
@@ -147,6 +149,22 @@ Automatically handles:
 - File renaming: `01 Track.mp3` → `1-01 Track.mp3`
 - Metadata updates: Sets `discnumber` field
 - Folder cleanup: Removes empty source folders
+
+### Validated Cover Art
+All cover/image handling routes through one validated pipeline
+(`utilities/core/cover_art.py`): magic-byte + Pillow checks plus an `ffprobe`
+ground-truth read (the same engine Jellyfin uses), with a post-write `dims > 0`
+assertion. This eliminates the `width=0`/`height=0` art Jellyfin reported.
+
+`utilities/generate_folder_art.py` creates a `folder.jpg`/`folder.png` from each
+album's validated embedded art for albums missing a folder image - **additive only**
+(never overwrites existing art), no audio writes, validated + ffmpeg-verified before
+and after write:
+```bash
+python utilities/generate_folder_art.py "/path/to/Music" --scan-only   # preview
+python utilities/generate_folder_art.py "/path/to/Music" --dry-run      # validate, no writes
+python utilities/generate_folder_art.py "/path/to/Music" --execute      # write where missing
+```
 
 ### YAML Batch Operations
 Use config files for repeatable operations:
