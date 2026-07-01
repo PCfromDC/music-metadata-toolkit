@@ -207,45 +207,49 @@ def write_folder_image(album: Path, data: bytes, mime: str, has_ffprobe: bool) -
     return dest
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('library', help='music library root (e.g. /path/to/Music or //SERVER/Music)')
-    mode = ap.add_mutually_exclusive_group()
-    mode.add_argument('--scan-only', action='store_true', help='list missing albums only')
-    mode.add_argument('--dry-run', action='store_true', help='validate, write nothing (default)')
-    mode.add_argument('--execute', action='store_true', help='write the folder image where missing')
-    ap.add_argument('--log', default=str(Path(__file__).resolve().parent.parent / 'outputs' / 'folderjpg_created.log'))
-    args = ap.parse_args()
+def generate_folder_art(root, *, execute=False, log_path=None) -> dict:
+    """Write ``folder.<ext>`` from embedded art for album dirs that lack one.
 
-    root = Path(args.library.replace('\\', '/'))
-    if not root.is_dir():
-        print(f'ERROR: library not found: {root}')
-        sys.exit(2)
+    Reusable core of the CLI ``--dry-run`` / ``--execute`` modes (the read-only
+    ``--scan-only`` listing stays in :func:`main`). Behavior-preserving:
+
+      - ``execute=False`` (default) -> dry-run: validate every candidate's art but
+        write nothing; the returned ``written`` is the would-write count.
+      - ``execute=True`` -> write ``folder.<ext>`` where missing, logging created
+        paths to ``log_path``.
+
+    Args:
+        root: Music library / artist / album folder to scan.
+        execute: Write files when True; otherwise dry-run (validate only).
+        log_path: Where created paths are appended (execute only). Defaults to
+            ``outputs/folderjpg_created.log`` beside the project.
+
+    Returns:
+        Summary dict: ``{missing, written, reencoded, skipped, failed,
+        failures, executed}``.
+    """
+    root = Path(str(root).replace('\\', '/'))
 
     print(f'Scanning {root} ...', flush=True)
     missing = find_missing_albums(root)
     print(f'Albums missing a folder image: {len(missing)}')
-
-    if args.scan_only:
-        for p, _ in missing[:50]:
-            print('  ', p.relative_to(root))
-        if len(missing) > 50:
-            print(f'   ... and {len(missing) - 50} more')
-        return
 
     has_ffprobe = ffprobe_available()
     if not has_ffprobe:
         print('NOTE: ffprobe/static-ffmpeg unavailable -> using Pillow decode check '
               '(consumer-parity unverified).')
 
-    do_write = args.execute
+    do_write = execute
     written = reencoded = skipped = failed = 0
     failures = []
 
     log_fh = None
+    resolved_log = None
     if do_write:
-        Path(args.log).parent.mkdir(parents=True, exist_ok=True)
-        log_fh = open(args.log, 'a', encoding='utf-8')
+        resolved_log = Path(log_path) if log_path else (
+            Path(__file__).resolve().parent.parent / 'outputs' / 'folderjpg_created.log')
+        resolved_log.parent.mkdir(parents=True, exist_ok=True)
+        log_fh = open(resolved_log, 'a', encoding='utf-8')
 
     try:
         for i, (album, audio) in enumerate(missing, 1):
@@ -291,7 +295,45 @@ def main():
         if len(failures) > 40:
             print(f'   ... and {len(failures) - 40} more')
     if do_write and written:
-        print(f'\ncreated paths logged to: {args.log}')
+        print(f'\ncreated paths logged to: {resolved_log}')
+
+    return {
+        'missing': len(missing),
+        'written': written,
+        'reencoded': reencoded,
+        'skipped': skipped,
+        'failed': failed,
+        'failures': failures,
+        'executed': do_write,
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('library', help='music library root (e.g. /path/to/Music or //SERVER/Music)')
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument('--scan-only', action='store_true', help='list missing albums only')
+    mode.add_argument('--dry-run', action='store_true', help='validate, write nothing (default)')
+    mode.add_argument('--execute', action='store_true', help='write the folder image where missing')
+    ap.add_argument('--log', default=str(Path(__file__).resolve().parent.parent / 'outputs' / 'folderjpg_created.log'))
+    args = ap.parse_args()
+
+    root = Path(args.library.replace('\\', '/'))
+    if not root.is_dir():
+        print(f'ERROR: library not found: {root}')
+        sys.exit(2)
+
+    if args.scan_only:
+        print(f'Scanning {root} ...', flush=True)
+        missing = find_missing_albums(root)
+        print(f'Albums missing a folder image: {len(missing)}')
+        for p, _ in missing[:50]:
+            print('  ', p.relative_to(root))
+        if len(missing) > 50:
+            print(f'   ... and {len(missing) - 50} more')
+        return
+
+    generate_folder_art(root, execute=args.execute, log_path=args.log)
 
 
 if __name__ == '__main__':

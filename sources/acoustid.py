@@ -65,12 +65,15 @@ class AcoustIDSource(DataSource):
         except (subprocess.SubprocessError, FileNotFoundError):
             pass
 
-        # Check common locations on Windows
+        # Bundled binary: <project root>/fpcalc.exe (and fpcalc without extension).
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         common_paths = [
+            os.path.join(project_root, "fpcalc.exe"),
+            os.path.join(project_root, "fpcalc"),
+            os.path.join(project_root, "utilities", "fpcalc.exe"),
             r"C:\Program Files\Chromaprint\fpcalc.exe",
             r"C:\Program Files (x86)\Chromaprint\fpcalc.exe",
             os.path.expanduser(r"~\fpcalc.exe"),
-            r"D:\music cleanup\utilities\fpcalc.exe"
         ]
 
         for path in common_paths:

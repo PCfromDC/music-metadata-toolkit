@@ -2,7 +2,70 @@
 
 A comprehensive Python-based toolset for auditing, cleaning, and maintaining music library metadata. Tested end to end on a **15,000+ track / 1,600+ album** library (covers validated 100% against ffprobe - the same engine Jellyfin uses).
 
-## Quick Start
+## Quickstart
+
+One install line, then one command runs the whole pipeline. The default is a safe
+preview - nothing is written until you add `--execute`.
+
+```bash
+pip install mutagen requests pillow static-ffmpeg pyyaml
+
+python cli.py lifecycle "//192.168.1.252/music" --dry-run   # preview the full pipeline
+python cli.py lifecycle "//192.168.1.252/music" --execute   # apply changes
+```
+
+Prefer AI judgment? Inside Claude Code, the equivalent one-liner is
+`/clean-music "//192.168.1.252/music"` (or `/lifecycle "<library>"`).
+
+New here? Read **[docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)** - it walks a
+zero-knowledge reader through both paths, the six phases, and the safety model.
+
+## The Unified Lifecycle (recommended workflow)
+
+The headline workflow is a single command that runs every phase in one fixed,
+canonical order:
+
+```
+scan -> identify -> validate -> dedupe -> covers -> fix
+```
+
+| Phase | What it does |
+|-------|--------------|
+| **scan** | Read every album's tags, count tracks, flag missing covers / metadata issues. |
+| **identify** | Fingerprint the audio of weak/unknown tracks (AcoustID) to find the real song; skipped silently with no API key. |
+| **validate** | Cross-check albums against MusicBrainz / iTunes, score the match, route to auto-apply or review. |
+| **dedupe** | Find within-album duplicate tracks, keep the best, move the rest to backup (never deletes). |
+| **covers** | ffprobe-validate embedded art, repair broken/missing art, write `folder.jpg` where missing. |
+| **fix** | Apply the approved metadata and cover corrections. |
+
+**Safety model (every phase):** `--scan-only` reports only, `--dry-run` (the
+**default**) previews the plan without writing, and `--execute` is the only mode
+that writes to your music. Duplicates are **moved to an off-library backup, never
+deleted**, and cover art is validated with `ffprobe` - the same engine Jellyfin
+uses - both before and after writing.
+
+```bash
+python cli.py lifecycle "<library>" --scan-only             # report only
+python cli.py lifecycle "<library>" --dry-run               # preview (default)
+python cli.py lifecycle "<library>" --execute               # apply
+python cli.py lifecycle "<library>" --execute --backup-dir "D:/music_backup/_duplicates"
+python cli.py lifecycle "<library>" --execute --aggressive  # dedupe also groups remaster/version variants
+python cli.py lifecycle "<library>" --execute --no-fingerprint
+```
+
+**Fresh queue + run history.** Each lifecycle run archives the previous work queue
+to `state/history/queue-<timestamp>.json` and clears it, so runs never contaminate
+each other. A dated summary of every run is appended to `state/run_history.json`.
+
+**Two orchestrators, one behavior (parity).** The pipeline is defined once, in
+`orchestrator/main.py` (the canonical phase order lives in the module-level
+`LIFECYCLE_PHASES` constant). `python cli.py lifecycle` is a thin wrapper that
+delegates to it, and `python -m orchestrator.main lifecycle` calls it directly -
+both accept identical flags and produce identical results. Use whichever entry
+point you prefer.
+
+You can still run any single phase on its own (see [CLI Commands](#cli-commands));
+the lifecycle just chains them in the correct order with shared safety flags.
 
 ### Prerequisites
 ```bash
@@ -395,6 +458,7 @@ The system uses confidence scoring to determine automation level:
 
 | Command | Description |
 |---------|-------------|
+| `lifecycle <path>` | Run the full pipeline: scan -> identify -> validate -> dedupe -> covers -> fix (dry-run by default; `--execute` to apply) |
 | `scan <path>` | Extract metadata from albums |
 | `validate <path>` | Validate and fix folder names |
 | `consolidate <path>` | Find and consolidate multi-disc albums |

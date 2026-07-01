@@ -27,6 +27,34 @@ Replace all backslashes (`\`) with forward slashes (`/`).
 
 ---
 
+## Lifecycle Parity (canonical phase order)
+
+`/clean-music` runs the SAME pipeline as `/lifecycle` and `cli.py lifecycle`, in
+the SAME canonical phase order (the `LIFECYCLE_PHASES` parity anchor in
+`orchestrator/main.py`):
+
+```
+scan -> identify -> validate -> dedupe -> covers -> fix
+```
+
+The fastest path to full parity is to invoke the lifecycle directly. Because
+`/clean-music` is fully autonomous, it runs the lifecycle in **execute** mode
+without prompting (this is the one command that does not require the explicit
+execute confirmation `/lifecycle` asks for):
+
+```bash
+cd "D:\music cleanup" && python cli.py lifecycle "<normalized_path>" --execute
+```
+
+That single call chains scan -> identify -> validate -> dedupe -> covers -> fix,
+archives/refreshes the queue, and appends a `run_history` summary. The detailed
+autonomous steps below are the legacy step-by-step expansion of the same phases
+(folder names, multi-disc consolidation, cover fetch/verify) and remain valid;
+prefer the one-shot lifecycle call, then layer the visual cover verification in
+Step 5 on top.
+
+---
+
 ## FULLY AUTONOMOUS WORKFLOW
 
 **This command requires NO user confirmation for any step.**

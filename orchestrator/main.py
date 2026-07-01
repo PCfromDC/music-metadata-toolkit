@@ -20,6 +20,11 @@ from pathlib import Path
 # Import agents
 from agents import ScannerAgent, ValidatorAgent, FixerAgent
 
+# Single source of truth for the lifecycle phase order (the parity anchor).
+# Downstream code should import this rather than redefining the order.
+#   from orchestrator.main import LIFECYCLE_PHASES
+LIFECYCLE_PHASES = ["scan", "identify", "validate", "dedupe", "covers", "fix"]
+
 
 def print_banner():
     """Print application banner"""
@@ -543,6 +548,240 @@ def cmd_fix(args):
     return 0
 
 
+def _discover_albums(scan_path: Path) -> list:
+    """Return album folders (dirs containing audio) under ``scan_path``.
+
+    Mirrors the discovery logic in :func:`cmd_scan`: a single album folder, or
+    one/two levels of subdirectories (artist/album layout).
+    """
+    albums = []
+    if scan_path.is_dir() and _has_audio_files(scan_path):
+        albums.append(str(scan_path))
+        return albums
+    for item in scan_path.iterdir():
+        if item.is_dir():
+            if _has_audio_files(item):
+                albums.append(str(item))
+            else:
+                for subitem in item.iterdir():
+                    if subitem.is_dir() and _has_audio_files(subitem):
+                        albums.append(str(subitem))
+    return albums
+
+
+def cmd_lifecycle(args):
+    """Run the full lifecycle pipeline in canonical order over ``args.path``.
+
+    Phases (LIFECYCLE_PHASES): scan -> identify -> validate -> dedupe -> covers -> fix.
+
+    Safety: default is dry-run. Music is written ONLY under --execute. --scan-only
+    and --dry-run never modify audio or move files.
+
+    Queue strategy: archive the existing queue to state/history/ then clear it for
+    a fresh run; append a dated run summary to state/run_history.json at the end.
+    """
+    from datetime import datetime
+
+    from .config import ConfigManager
+    from .state import StateStore
+    from .queue import QueueManager, AlbumStatus, Priority
+    from . import run_history
+
+    print_banner()
+
+    # Resolve mode (default = dry-run). Music is touched only under --execute.
+    scan_only = bool(args.scan_only)
+    execute = bool(args.execute)
+    dry_run = not scan_only and not execute
+    mode = "scan-only" if scan_only else ("execute" if execute else "dry-run")
+
+    scan_path = Path(str(args.path).replace('\\', '/'))
+    if not scan_path.exists():
+        print(f"Error: Path not found: {scan_path}")
+        return 1
+
+    print(f"Lifecycle target: {scan_path}")
+    print(f"Mode: {mode}")
+    print(f"Phases: {' -> '.join(LIFECYCLE_PHASES)}")
+    print()
+
+    config = ConfigManager()
+    state = StateStore(config.state_path)
+    queue = QueueManager()
+
+    # --- fresh queue: archive previous run, then clear ---
+    archived = queue.archive("state/history")
+    if archived:
+        print(f"Archived previous queue -> {archived}")
+    queue.clear()
+
+    counts = {
+        "scanned": 0, "identified": 0, "validated": 0, "needs_review": 0,
+        "deduped_moved": 0, "covers_repaired": 0, "folderjpg_added": 0,
+        "fixed": 0, "flagged": 0,
+    }
+
+    # =================== scan ===================
+    print("\n--- Phase: scan ---")
+    albums = _discover_albums(scan_path)
+    print(f"Albums discovered: {len(albums)}")
+    scanner = ScannerAgent(config, state)
+    for album_path in albums:
+        result = scanner.process({'path': album_path})
+        if result.get('status') == 'success':
+            counts["scanned"] += 1
+            album_id = result.get('album_id')
+            issue_count = result.get('issue_count', 0)
+            queue.add(
+                album_id=album_id,
+                path=album_path,
+                status=AlbumStatus.SCANNED,
+                priority=Priority.HIGH if issue_count > 0 else Priority.NORMAL,
+                metadata={
+                    'title': result.get('data', {}).get('title'),
+                    'artist': result.get('data', {}).get('artist'),
+                    'track_count': result.get('track_count'),
+                    'has_cover': result.get('has_cover'),
+                    'issues': result.get('data', {}).get('issues', []),
+                },
+            )
+    print(f"Scanned: {counts['scanned']}")
+
+    validator = ValidatorAgent(config, state)
+
+    # =================== identify ===================
+    # Best-effort AcoustID song-ID for albums with weak/unknown metadata.
+    # Fail-soft no-op when there is no API key or fpcalc binary.
+    print("\n--- Phase: identify ---")
+    for item in queue.get_by_status(AlbumStatus.SCANNED):
+        meta = item.get('metadata', {})
+        title = (meta.get('title') or '').strip()
+        artist = (meta.get('artist') or '').strip()
+        unknown = (not title) or (artist.lower() in ('', 'various artists', 'unknown'))
+        if not unknown:
+            continue
+        hits = validator.identify_unknown_tracks(item['path'])
+        if hits:
+            counts["identified"] += 1
+    print(f"Identified (AcoustID): {counts['identified']}")
+
+    # =================== validate ===================
+    # Read-only against MusicBrainz/iTunes; never writes to music.
+    print("\n--- Phase: validate ---")
+    pending = queue.get_by_status(AlbumStatus.SCANNED)
+    for item in pending:
+        meta = item.get('metadata', {})
+        album_name = Path(item['path']).name
+        data = {
+            'path': item['path'],
+            'album_id': item['id'],
+            'title': meta.get('title') or album_name,
+            'artist': meta.get('artist') or 'Various Artists',
+            'track_count': meta.get('track_count', 0),
+            'has_cover': meta.get('has_cover', False),
+        }
+        result = validator.process(data)
+        if result.get('status') != 'success':
+            continue
+        vstatus = result.get('validation_status')
+        confidence = result.get('confidence', 0)
+        if vstatus == 'auto_approved':
+            counts["validated"] += 1
+            if result.get('corrections_needed', 0) > 0:
+                queue.update_status(item['id'], AlbumStatus.VALIDATED,
+                                    metadata={'validation': result.get('data'), 'confidence': confidence})
+            else:
+                queue.update_status(item['id'], AlbumStatus.VERIFIED,
+                                    metadata={'validation': result.get('data'), 'confidence': confidence})
+        else:
+            counts["needs_review"] += 1
+            queue.update_status(item['id'], AlbumStatus.NEEDS_REVIEW,
+                                metadata={'validation': result.get('data'), 'confidence': confidence})
+    print(f"Validated (auto): {counts['validated']}  |  Needs review: {counts['needs_review']}")
+
+    # =================== dedupe ===================
+    print("\n--- Phase: dedupe ---")
+    from utilities.deduplicate import deduplicate_library
+    dd = deduplicate_library(
+        str(scan_path),
+        backup_dir=args.backup_dir,
+        scan_only=scan_only,
+        dry_run=dry_run,
+        aggressive=bool(args.aggressive),
+        fingerprint=not bool(args.no_fingerprint),
+    )
+    counts["deduped_moved"] = dd.moved
+    counts["flagged"] += dd.review_count
+    dverb = "Moved" if execute else "Would move"
+    print(f"{dverb} (strong): {dd.moved}  |  Review groups: {dd.review_count}")
+
+    # =================== covers ===================
+    print("\n--- Phase: covers ---")
+    from utilities.repair_covers import repair_library
+    from utilities.generate_folder_art import generate_folder_art
+    rc = repair_library(str(scan_path), scan_only=scan_only, dry_run=dry_run)
+    counts["covers_repaired"] = rc.get('repaired', 0) if execute else rc.get('needs_repair', 0)
+    counts["flagged"] += rc.get('failed', 0)
+    print(f"Covers needing repair: {rc.get('needs_repair', 0)}  |  "
+          f"{'repaired' if execute else 'would repair'}: {counts['covers_repaired']}")
+    gfa = generate_folder_art(str(scan_path), execute=execute)
+    counts["folderjpg_added"] = gfa.get('written', 0)
+    counts["flagged"] += gfa.get('failed', 0)
+
+    # =================== fix ===================
+    print("\n--- Phase: fix ---")
+    if scan_only:
+        print("(scan-only - fix phase skipped)")
+    else:
+        fixer = FixerAgent(config, state)
+        ready = queue.get_ready_to_fix()
+        print(f"Albums ready to fix: {len(ready)}")
+        for item in ready:
+            validation = item.get('metadata', {}).get('validation', {}) or {}
+            corrections = validation.get('corrections', [])
+            if not corrections:
+                if execute:
+                    queue.update_status(item['id'], AlbumStatus.VERIFIED)
+                continue
+            result = fixer.process({'path': item['path'], 'corrections': corrections,
+                                    'dry_run': not execute})
+            if result.get('status') in ('success', 'partial'):
+                counts["fixed"] += 1
+                if execute:
+                    queue.update_status(item['id'], AlbumStatus.FIXED,
+                                        metadata={'fix_result': result.get('data')})
+        verb = "Fixed" if execute else "Would fix"
+        print(f"{verb}: {counts['fixed']}")
+
+    # --- run summary ---
+    record = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "target": str(scan_path),
+        "mode": mode,
+        "phases": counts,
+    }
+    run_history.append_run(record)
+
+    print("\n" + "=" * 60)
+    print("Lifecycle complete!")
+    print(f"  Mode:            {mode}")
+    print(f"  Scanned:         {counts['scanned']}")
+    print(f"  Identified:      {counts['identified']}")
+    print(f"  Validated:       {counts['validated']}")
+    print(f"  Needs review:    {counts['needs_review']}")
+    print(f"  Deduped moved:   {counts['deduped_moved']}")
+    print(f"  Covers repaired: {counts['covers_repaired']}")
+    print(f"  Folder.jpg added:{counts['folderjpg_added']}")
+    print(f"  Fixed:           {counts['fixed']}")
+    print(f"  Flagged:         {counts['flagged']}")
+    if scan_only:
+        print("\n(scan-only - no changes made)")
+    elif dry_run:
+        print("\n(dry-run - no changes made)")
+    print(f"\nRun summary appended to state/run_history.json")
+    return 0
+
+
 def cmd_status(args):
     """Display current status"""
     from .config import ConfigManager
@@ -608,6 +847,11 @@ def cmd_resume(args):
 
 def main():
     """Main entry point"""
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
     parser = argparse.ArgumentParser(
         prog='music-clean',
         description='Music Library Cleanup Orchestrator'
@@ -641,6 +885,23 @@ def main():
     fix_parser.add_argument('--dry-run', action='store_true', help='Preview only')
     fix_parser.add_argument('--album', metavar='ID', help='Fix specific album')
 
+    # lifecycle
+    lifecycle_parser = subparsers.add_parser(
+        'lifecycle', help='Run the full pipeline: scan->identify->validate->dedupe->covers->fix')
+    lifecycle_parser.add_argument('path', help='Library / artist / album folder to process')
+    lifecycle_parser.add_argument('--scan-only', action='store_true',
+                                  help='report only; never modify anything')
+    lifecycle_parser.add_argument('--dry-run', action='store_true',
+                                  help='preview the plan without writing (default)')
+    lifecycle_parser.add_argument('--execute', action='store_true',
+                                  help='apply changes (the only mode that writes to music)')
+    lifecycle_parser.add_argument('--backup-dir', default=r'D:\music_backup\_duplicates',
+                                  help='where dedupe moves losing duplicates')
+    lifecycle_parser.add_argument('--aggressive', action='store_true',
+                                  help='dedupe also groups remaster/version variants')
+    lifecycle_parser.add_argument('--no-fingerprint', action='store_true',
+                                  help='dedupe matches on metadata only (skip fpcalc)')
+
     # status
     subparsers.add_parser('status', help='Show status')
 
@@ -660,6 +921,7 @@ def main():
         'validate': cmd_validate,
         'review': cmd_review,
         'fix': cmd_fix,
+        'lifecycle': cmd_lifecycle,
         'status': cmd_status,
         'resume': cmd_resume,
     }
