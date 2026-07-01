@@ -91,6 +91,24 @@ class AcoustIDSource(DataSource):
 
         return True
 
+    def fingerprint_only(self, audio_path: str) -> Optional[Dict[str, Any]]:
+        """Return the local Chromaprint fingerprint + duration, no web lookup.
+
+        Unlike :meth:`fingerprint_file`, this needs only the ``fpcalc`` binary -
+        **no AcoustID API key** - because de-duplication compares the fingerprint
+        between local files rather than querying the AcoustID database.
+
+        Args:
+            audio_path: Path to an audio file.
+
+        Returns:
+            ``{"fingerprint": str, "duration": float}`` or ``None`` if fpcalc is
+            unavailable or the file could not be fingerprinted.
+        """
+        if not self.fpcalc_path:
+            return None
+        return self._generate_fingerprint(str(audio_path))
+
     def fingerprint_file(self, audio_path: str) -> Optional[Dict[str, Any]]:
         """
         Generate fingerprint and look up in AcoustID database.

@@ -110,6 +110,33 @@ def cmd_repair_covers(args):
         print("(Dry run - no changes made)")
 
 
+def cmd_dedupe(args):
+    """Find duplicate copies of a track in a folder; move losers to backup."""
+    from utilities.deduplicate import deduplicate_library
+
+    summ = deduplicate_library(
+        args.path,
+        backup_dir=args.backup_dir,
+        scan_only=args.scan_only,
+        dry_run=not args.execute and not args.scan_only,
+        aggressive=args.aggressive,
+        fingerprint=not args.no_fingerprint,
+    )
+    verb = "Moved" if args.execute else "Would move"
+    print("\n=== De-duplication Summary ===")
+    print(f"Albums scanned:           {summ.albums}")
+    print(f"Tracks examined:          {summ.tracks}")
+    print(f"Duplicate groups:         {summ.groups}")
+    print(f"{verb} (strong):          {summ.moved}  (~{summ.space_recovered_kb // 1024} MB)")
+    print(f"Probable/cross (review):  {summ.review_count}")
+    if summ.failed:
+        print(f"Failed:                   {summ.failed}")
+    if args.scan_only:
+        print("(scan-only - no changes made)")
+    elif not args.execute:
+        print("(dry-run - no changes made)")
+
+
 def cmd_status(args):
     """Show processing status."""
     from orchestrator.state import SessionState
@@ -180,6 +207,19 @@ def main():
     repair_parser.add_argument('--scan-only', action='store_true', help='Report corrupted albums without making changes')
     repair_parser.add_argument('--dry-run', action='store_true', help='Show the repair plan without fetching or writing')
     repair_parser.set_defaults(func=cmd_repair_covers)
+
+    # dedupe command
+    dedupe_parser = subparsers.add_parser('dedupe', help='Find duplicate tracks; move losers to backup (never deletes)')
+    dedupe_parser.add_argument('path', help='Library / artist / album folder to scan')
+    dedupe_parser.add_argument('--backup-dir', default=r'D:\music_backup\_duplicates',
+                               help='where losing duplicates are moved (mirrors relative paths)')
+    dedupe_parser.add_argument('--scan-only', action='store_true', help='report duplicate groups without changes')
+    dedupe_parser.add_argument('--dry-run', action='store_true', help='show the keep/move plan without writing')
+    dedupe_parser.add_argument('--execute', action='store_true', help='move strong duplicates to the backup dir')
+    dedupe_parser.add_argument('--aggressive', action='store_true',
+                               help='also group remaster/version variants and move probable matches')
+    dedupe_parser.add_argument('--no-fingerprint', action='store_true', help='match on metadata only (skip fpcalc)')
+    dedupe_parser.set_defaults(func=cmd_dedupe)
 
     # status command
     status_parser = subparsers.add_parser('status', help='Show processing status')

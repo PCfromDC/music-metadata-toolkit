@@ -46,6 +46,7 @@ D:\music cleanup\
 │   ├── embed_cover.py          # Cover art embedding
 │   ├── generate_folder_art.py  # Write folder.jpg from embedded art (additive)
 │   ├── repair_covers.py        # Re-fetch/re-embed corrupt or wrong covers
+│   ├── deduplicate.py          # Duplicate tracks -> backup (validate first; never deletes)
 │   ├── core/                   # Validated cover-art pipeline (cover_art, ffprobe, ...)
 │   └── consolidate_multidisc.py# Multi-disc consolidation
 │
@@ -501,6 +502,36 @@ python utilities/generate_folder_art.py "/path/to/Music" --execute
 
 > Method/rationale in project memory: `cover-remediation-method.md` (indexed in MEMORY.md).
 
+### deduplicate.py (duplicate tracks -> backup)
+
+**Purpose:** find duplicate copies of the same track within an album folder, keep
+the best one, and **move the rest to an off-library backup (never delete)**.
+
+**Workflow position - run AFTER validation:**
+`scan -> validate (track ID via fingerprint + album metadata) -> DEDUPE -> cover art`.
+De-dup needs identity + quality known first, so the keeper choice is correct.
+
+Mirrors `.claude/agents/duplicate_detector.md` (the agent stays the recommend-only
+adjudicator for ambiguous groups; this is the Python executor):
+- **Match:** same normalized title within a folder, confirmed by identical Chromaprint
+  fingerprint OR duration within +/-3s = **STRONG**; within +/-10s = **PROBABLE**.
+  Copy-suffixes (`Song 2`, `Song (2)`) are stripped for matching; distinct versions
+  (live / remix / edit / remaster) are NOT merged unless `--aggressive`.
+- **Keeper:** higher bitrate -> has embedded art -> no watermark/copy suffix -> larger
+  size; exactly one copy is always kept.
+- **Action:** STRONG within-folder losers are moved to `<backup-dir>/<relative path>`
+  (copy -> verify size -> remove; logged to `outputs/dedupe_moved.log`). PROBABLE and
+  cross-folder same-song hits go to `outputs/dedupe_review.json` (review only - a song
+  legitimately appears on multiple albums), never auto-moved unless `--aggressive`.
+- Fingerprint (fpcalc) is on by default and applied only to candidate groups (fast).
+  Falls back to metadata matching if fpcalc is unavailable.
+
+```bash
+python cli.py dedupe "/path/to/Music" --scan-only                         # report groups
+python cli.py dedupe "/path/to/Music" --dry-run                           # keep/move plan
+python cli.py dedupe "/path/to/Music" --backup-dir "D:/music_backup/_duplicates" --execute
+```
+
 ---
 
 ## YAML Configuration System
@@ -794,6 +825,21 @@ if not os.path.exists(kb_path):
 
 ## Changelog
 
+### 2026-06-29 (De-duplication utility + docs)
+- **New `utilities/deduplicate.py` + `cli.py dedupe`**: first-class, safe de-dup that
+  finds duplicate copies of a track within an album folder, keeps the best (bitrate ->
+  art -> clean name -> size), and **moves losers to an off-library backup (never
+  deletes)**. Mirrors `.claude/agents/duplicate_detector.md`: STRONG (identical
+  fingerprint or duration +/-3s) auto-moves; PROBABLE (+/-10s) and cross-folder hits go
+  to a review report; distinct versions (live/remix/remaster) protected unless
+  `--aggressive`. Fingerprint (fpcalc) on by default, applied only to candidate groups.
+  `--scan-only`/`--dry-run`/`--execute`; moves logged to `outputs/dedupe_moved.log`.
+  Replaces the ad-hoc scratchpad de-dup used previously; positioned in the workflow
+  **after** track-ID + album validation. Added `AcoustIDSource.fingerprint_only()`
+  (local fingerprint, no API key) and `tests/test_deduplicate.py`.
+- **README/CLAUDE**: documented the three core validations (track ID, album, cover art)
+  and the `validate -> dedupe -> cover art` ordering.
+
 ### 2026-06-28 (Full-library cover sweep + folder.jpg generator)
 - **Library-wide cover remediation**: validated/repaired covers across the whole
   library; missing-art list driven from 137 to 0. Wrong-but-unfindable covers were
@@ -1008,7 +1054,7 @@ python -c "import os; os.rename('old.mp3', 'new.mp3')"
 
 ---
 
-**Last Updated:** 2026-06-28
+**Last Updated:** 2026-06-29
 **Project Status:** Active Development (v4.0)
 **Current Focus:** Full-library maintenance - covers validated 100% (1,636 albums / 15,860 tracks), folder.jpg coverage 100%, 0 width=0
 **Completed:** U2 library (261 tracks), full-library cover remediation (missing-art 137 to 0), folder.jpg generator, 795 backups folders reclaimed (~39 GB), secrets/repo hygiene pass
