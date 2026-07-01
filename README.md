@@ -1,6 +1,6 @@
 # Music Library Metadata Management System
 
-A comprehensive Python-based toolset for auditing, cleaning, and maintaining music library metadata. Built and tested through the complete cleanup of a 261-track U2 collection and 273-album Various Artists folder (4,762 tracks).
+A comprehensive Python-based toolset for auditing, cleaning, and maintaining music library metadata. Tested end to end on a **15,000+ track / 1,600+ album** library (covers validated 100% against ffprobe - the same engine Jellyfin uses).
 
 ## Quick Start
 
@@ -18,40 +18,161 @@ cp configs/templates/credentials.yaml.example configs/active/credentials.yaml
 
 See `configs/README.md` for details on each service.
 
-### Using the CLI
+## Scanning a Library (With and Without Claude)
 
+The toolkit works two ways. The Python core is **100% standalone** - no Claude, no
+network beyond optional metadata lookups. Claude Code adds AI decision-making and
+visual cover verification *on top of* the same core, so output is identical in
+format; Claude just adds judgment calls a script can't make (which source to trust,
+is this the right cover). Point either at a single artist folder **or your whole
+library root**.
+
+### Without Claude - pure Python
+
+**Targeted, per artist/album, via `cli.py`:**
 ```bash
-# Scan and extract metadata
-python cli.py scan "/path/to/music/Artist Name"
+pip install mutagen requests pillow static-ffmpeg pyyaml
 
-# Validate folder names against metadata (auto-fixes)
-python cli.py validate "/path/to/music/Artist Name"
+python cli.py scan          "/path/to/Music"                 # extract metadata, audit, report
+python cli.py validate      "/path/to/Music"                 # detect + auto-fix folder-name issues
+python cli.py consolidate   "/path/to/Music"                 # merge multi-disc sets
+python cli.py repair-covers "/path/to/Music"                 # detect + re-embed corrupt/missing art
+python cli.py embed-cover   "/path/to/Music/Artist/Album" "https://.../cover.jpg"
 
-# Consolidate multi-disc albums
-python cli.py consolidate "/path/to/music/Artist Name"
-
-# Move a track to another album
-python cli.py move-track "path/to/track.mp3" "path/to/dest/album" --album "Album Name" --artist "Artist"
-
-# Embed cover art
-python cli.py embed-cover "path/to/album" "https://example.com/cover.jpg"
+# Write folder.jpg from each album's embedded art where missing (additive, safe):
+python utilities/generate_folder_art.py "/path/to/Music" --scan-only   # preview
+python utilities/generate_folder_art.py "/path/to/Music" --execute     # write where missing
 ```
 
-### Using Claude Commands (Fully Autonomous)
-
+**Whole-library, stateful workflow, via the orchestrator** (scan -> review -> apply,
+with confidence scoring and resumable state):
 ```bash
-# Complete cleanup workflow - no prompts required
-/clean-music /path/to/music/Various Artists
-
-# Validate and fix folder names
-/validate-folders /path/to/music/Artist Name
-
-# Find and consolidate all multi-disc albums
-/consolidate-all /path/to/music/Various Artists
-
-# Move track between albums (interactive)
-/move-track "path/to/track.mp3" "path/to/dest"
+python -m orchestrator.main init     "/path/to/Music"   # register the library
+python -m orchestrator.main scan                         # extract metadata + detect issues
+python -m orchestrator.main validate                     # cross-check vs MusicBrainz / iTunes
+python -m orchestrator.main review                       # inspect uncertain matches
+python -m orchestrator.main fix --dry-run                # preview every change
+python -m orchestrator.main fix                          # apply
+python -m orchestrator.main status                       # progress; resume anytime
 ```
+
+### With Claude - AI-assisted (run inside Claude Code)
+
+Same operations, but Claude resolves cross-source conflicts and **visually verifies**
+cover art (catching covers that are technically valid but wrong for the album):
+```bash
+/clean-music      "/path/to/Music/Various Artists"   # autonomous end-to-end, no prompts
+/verify-covers    "/path/to/Music/Various Artists"   # AI vision: does the art match the album?
+/validate-folders "/path/to/Music/Artist"            # fix folder-name mismatches
+/consolidate-all  "/path/to/Music/Various Artists"   # find + merge every multi-disc set
+/repair-covers    "/path/to/Music/Artist"            # re-fetch / re-embed bad covers
+```
+
+## Validation: Track ID, Album, Cover Art (the core)
+
+This toolkit is built around **three validation layers** - the parts that make a
+library *correct*, not just tidy. Each runs deterministically in Python, and
+optionally with Claude for the judgment calls a script can't make.
+
+### 1. Track identity - audio fingerprint
+*Is this file actually the song its tags claim?* Tags lie: mislabeled rips,
+wrong-version files, "Track 04". The toolkit fingerprints the **audio itself** with
+Chromaprint (`fpcalc`) and looks it up via **AcoustID** to get the real recording
+(artist / title / release). This is how a file tagged "Kung Fu Fighting (Jackie
+Chan)" was identified as **Ash - "Kung Fu"** and corrected.
+- Tools: `fpcalc` + `sources/acoustid.py`; agent `.claude/agents/fingerprint_validator.md`
+- Needs a free AcoustID API key in `configs/active/credentials.yaml`.
+
+### 2. Album / metadata validation
+*Do the album, artist, track numbers, and titles match an authoritative release?*
+The **ValidatorAgent** cross-checks against **MusicBrainz** and **iTunes** (with
+**Discogs** / **Spotify** as backups), computes a **confidence score**, and routes by
+threshold: high -> auto-apply, mid -> review, low -> reject. Claude's
+`conflict_resolver` decides which source to trust when they disagree.
+- Tools: `agents/validator.py`, `sources/*`; agents `metadata_validator`,
+  `conflict_resolver`. Run via `cli.py validate` or the orchestrator
+  `scan -> validate -> review -> fix` workflow (thresholds table under
+  [Automation Thresholds](#automation-thresholds)).
+
+### 3. Cover art validation - Jellyfin-safe
+*Is the embedded art a real, decodable image Jellyfin can read - and is it the right
+cover?* Two-engine validation (Pillow pre-gate + `ffprobe` ground truth, the same
+engine Jellyfin uses) means art is never written `width=0`; plus repair, `folder.jpg`
+generation, and an optional Claude **visual** match check.
+- Full detail in the next section.
+
+> Together: the fingerprint confirms *what the track is*, metadata validation confirms
+> *the album is right*, and cover validation confirms *the art is valid and matches* -
+> deterministic in Python, with Claude for the calls a script can't make.
+
+## Cover Art & Jellyfin Validation
+
+Cover art is the area this toolkit is most opinionated about, because it's where
+"looks fine" and "actually works" diverge.
+
+### The problem
+Jellyfin - and anything built on **ffmpeg** - extracts embedded album art with
+`ffprobe`. The toolkit was producing art that displayed in some tag editors but
+ffprobe read as `width=0, height=0` (blank/broken in Jellyfin), because bytes were
+embedded with **no validation** and the image format was guessed from the file
+extension (or an unsafe `data[:8]` slice that defaulted to JPEG on empty bytes).
+
+### The fix: one validated pipeline (Pillow + ffprobe)
+Every download and embed routes through `utilities/core/cover_art.py`, with
+**two-engine** validation:
+
+- **Pillow pre-gate** (in memory, before writing): non-empty -> magic-byte sniff
+  (JPEG/PNG) -> integrity `verify()` -> reopen + `load()` (actually decode pixels)
+  -> dimensions > 0 -> reject below 50px (icons/junk).
+- **ffprobe ground truth** (after writing): re-reads the saved file with the
+  **same engine Jellyfin uses** and asserts the cover stream reports real
+  `width>0 / height>0`. A short/corrupt write is rejected, never silently kept.
+
+The unit layer **hard-fails** (raises, never writes bad bytes); batch layers
+**fail-soft** (log, skip, continue). If `ffprobe`/`static-ffmpeg` isn't installed it
+degrades to the Pillow check and flags consumer-parity as unverified. MIME and the
+MP4 cover format are set from the detected magic bytes, not the extension; existing
+art is cleared before re-embedding to avoid duplicate/stale frames.
+
+### Two kinds of cover - both kept consistent
+- **Embedded art** - ID3 `APIC` / MP4 `covr` / FLAC `Picture`, inside each track.
+- **`folder.jpg` / `folder.png`** - the sidecar image Jellyfin and most scanners
+  prefer for the album thumbnail.
+
+A subtle real-world bug: art can be a perfectly valid JPEG standalone yet be embedded
+in a malformed `APIC` that Pillow accepts but ffmpeg reads as `0x0`. The post-write
+ffprobe check catches exactly this; the fix is to re-embed through the validated core.
+
+### The cover toolset
+
+| Tool | What it does |
+|------|--------------|
+| `cli.py embed-cover` / `utilities/embed_cover.py` / core `embed_in_album` | download -> validate -> embed into every track -> write `folder.jpg` -> post-write ffprobe check |
+| `cli.py repair-covers` / `utilities/repair_covers.py` | scan with ffprobe for `width=0` / missing / corrupt embedded art, then re-fetch (iTunes -> MusicBrainz/Cover Art Archive -> Discogs) and re-embed, backing up the old art first |
+| `utilities/generate_folder_art.py` | write `folder.jpg`/`folder.png` from each album's **validated** embedded art where a folder image is missing - **additive only** (never overwrites), **no audio writes**, validated + ffmpeg-verified before *and* after write |
+| `/verify-covers` (Claude) | AI vision check: does the art actually **match the album**? Catches covers that are technically valid but visually wrong (look-alike auto-fetches) |
+| `/ai-validate-covers` + `validators/` | optional pluggable AI "second opinion" (Ollama / OpenAI-compatible / Anthropic / Hermes / Null-by-default) |
+| AcoustID fingerprint (`fpcalc` + `sources/acoustid.py`, `fingerprint_validator` agent) | identify mislabeled tracks by audio so the *right* cover can be fetched (e.g. a track tagged "Kung Fu Fighting" that is actually Ash - "Kung Fu") |
+
+### End to end: clean a whole library's covers
+
+**Without Claude (deterministic):**
+```bash
+python cli.py repair-covers "/path/to/Music"                        # fix width=0 / missing / corrupt embedded art
+python utilities/generate_folder_art.py "/path/to/Music" --execute  # add folder.jpg where missing (additive)
+```
+
+**With Claude (adds visual correctness):**
+```bash
+/repair-covers "/path/to/Music/Artist"             # re-fetch/re-embed bad covers
+/verify-covers "/path/to/Music/Various Artists"    # flag valid-but-wrong covers for replacement
+```
+
+This is the exact pass run on the reference library: validated to **100% ffprobe-clean
+(0 `width=0`)** across 15,860 tracks, with **folder.jpg coverage brought to 100%**.
+
+> Background: project memory `cover-art-validation.md`, `jellyfin-ffprobe-truth.md`,
+> and `cover-remediation-method.md`. Full validator guide: [`docs/AI_VALIDATORS.md`](docs/AI_VALIDATORS.md).
 
 ## Project Structure
 
@@ -150,21 +271,12 @@ Automatically handles:
 - Metadata updates: Sets `discnumber` field
 - Folder cleanup: Removes empty source folders
 
-### Validated Cover Art
-All cover/image handling routes through one validated pipeline
-(`utilities/core/cover_art.py`): magic-byte + Pillow checks plus an `ffprobe`
-ground-truth read (the same engine Jellyfin uses), with a post-write `dims > 0`
-assertion. This eliminates the `width=0`/`height=0` art Jellyfin reported.
-
-`utilities/generate_folder_art.py` creates a `folder.jpg`/`folder.png` from each
-album's validated embedded art for albums missing a folder image - **additive only**
-(never overwrites existing art), no audio writes, validated + ffmpeg-verified before
-and after write:
-```bash
-python utilities/generate_folder_art.py "/path/to/Music" --scan-only   # preview
-python utilities/generate_folder_art.py "/path/to/Music" --dry-run      # validate, no writes
-python utilities/generate_folder_art.py "/path/to/Music" --execute      # write where missing
-```
+### Validated Cover Art (Jellyfin-safe)
+All cover handling routes through one validated pipeline (Pillow pre-gate + `ffprobe`
+ground-truth post-write check) so embedded art is never written `width=0`, plus tools
+to repair existing libraries and generate `folder.jpg` from embedded art.
+**See the dedicated [Cover Art & Jellyfin Validation](#cover-art--jellyfin-validation)
+section for the full story and commands.**
 
 ### YAML Batch Operations
 Use config files for repeatable operations:
@@ -384,4 +496,4 @@ See [`docs/AI_VALIDATORS.md`](docs/AI_VALIDATORS.md) for the full guide.
 ---
 
 **Status:** Active Development
-**Last Updated:** 2026-01-13
+**Last Updated:** 2026-06-29
