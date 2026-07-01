@@ -10,11 +10,15 @@ identity and quality are known before choosing a keeper:
     scan -> validate (fingerprint + metadata) -> DEDUPE -> cover art
 
 Mirrors the rules in `.claude/agents/duplicate_detector.md`:
-  - Matching: same normalized title within a folder, confirmed by audio fingerprint
-    (identical Chromaprint) OR duration within +/-3s = STRONG; within +/-10s = PROBABLE.
-  - Distinct versions (live / remix / edit / remaster) are NOT duplicates unless
-    --aggressive. Cross-folder same-song hits are review-only (a song legitimately
-    appears on several albums).
+  - Matching: same normalized title within a folder selects *candidates*; the audio
+    **Chromaprint fingerprint is authoritative** for the move decision - only pairs with
+    IDENTICAL fingerprints are STRONG (auto-moved). Different fingerprints = different
+    audio = NOT a duplicate (this rejects look-alikes like the two different recordings
+    of "More Than a Woman", or a same-title re-rip). If a fingerprint can't be computed
+    (no fpcalc), same-title/close-duration candidates go to review, never auto-moved.
+  - Placeholder titles (Track N, Skit N, Intro, [Untitled Track]) never identify a song,
+    so they are not grouped by title. Distinct versions (live / remix / remaster) are not
+    duplicates unless --aggressive. Cross-folder same-song hits are review-only.
   - Keeper rank: higher bitrate -> has embedded art -> no watermark/copy suffix in
     filename -> larger size. Exactly one copy is always kept.
 
@@ -64,11 +68,47 @@ VERSION_MARKERS = (
     'remastered', 'demo', 'unplugged', 'reprise', 'version', 'session',
     'radio edit', 'extended', 'club', 'dub', 'a cappella', 'acappella', 'karaoke',
 )
-# Filename markers that indicate a watermarked / copied file (worse keeper).
+# Filename markers that indicate a watermarked / copied file (worse keeper, and a
+# "this is a copy" signal). A bare trailing number ("Julia 2") counts.
 WATERMARK_RE = re.compile(r'(www\.|\.com|\.net|music-?madness|-?\bcopy\b|_dup\b|\(\d+\)$|\s\d+$)', re.I)
-# Trailing copy-suffixes stripped for matching ("Song 2", "Song (2)", "Song - copy").
-COPY_SUFFIX_RE = re.compile(r'(\s*\(\d+\)|\s*-\s*copy|\s*_dup|\s+\d+)\s*$', re.I)
+# EXPLICIT copy-suffixes stripped for matching. NOTE: a bare trailing number is NOT
+# stripped here - for placeholder titles the number is the identity ("Track 4" vs
+# "Track 10", "Skit 2" vs "Skit 5") and for real titles it can be semantic
+# ("Symphony No. 5"). Numbered copies are re-joined by the copy-pair pass instead.
+COPY_SUFFIX_RE = re.compile(r'(\s*\(\d+\)|\s*-\s*copy\b|\s*_dup\b|\s+copy)\s*$', re.I)
+_TRAILING_NUM_RE = re.compile(r'^(.*\S)\s+\d+$')
 LOSSLESS_EXTS = {'.flac', '.wav', '.aiff', '.ape'}
+
+# Generic / placeholder "titles" that do NOT identify a song. Two tracks sharing one
+# of these are almost always different songs (a numbered skit, an untitled track, an
+# intro), so they are never grouped by title - only a fingerprint could match them.
+GENERIC_TITLES = {
+    'track', 'untitled', 'unknown', 'intro', 'outro', 'interlude', 'skit',
+    'audiotrack', 'audio track', 'hidden', 'hidden track', 'untitled track',
+    'bonus', 'bonus track', 'snippet', 'no title', 'notitle',
+}
+
+
+def _is_generic_title(norm: str) -> bool:
+    """True if a normalized title is an unreliable placeholder (skip title grouping)."""
+    if not norm:
+        return True
+    if norm in GENERIC_TITLES or norm.isdigit():
+        return True
+    base = re.sub(r'\s+\d+$', '', norm).strip()   # 'track 4' -> 'track'
+    return base in GENERIC_TITLES or base == ''
+
+
+def _copy_base(norm: str):
+    """If ``norm`` looks like a numbered copy ('foo 2'), return the base ('foo'),
+    but only when the base is a real (non-generic) title. Else None."""
+    m = _TRAILING_NUM_RE.match(norm)
+    if not m:
+        return None
+    base = m.group(1).strip()
+    if base and not _is_generic_title(base):
+        return base
+    return None
 
 
 @dataclass
@@ -180,18 +220,26 @@ def _add_fingerprints(tracks: List[Track], enabled: bool) -> None:
 
 
 def classify(keeper: Track, other: Track) -> str:
-    """'strong' | 'probable' | 'distinct' per the agent's matching rules."""
-    if keeper.fingerprint and other.fingerprint and keeper.fingerprint == other.fingerprint:
-        return 'strong'
+    """'strong' | 'probable' | 'distinct'.
+
+    The audio FINGERPRINT is authoritative for auto-moving:
+      - both fingerprinted and IDENTICAL  -> STRONG   (same audio; safe to move a copy)
+      - both fingerprinted and DIFFERENT   -> DISTINCT (different recording/encode; NOT a
+        duplicate - this is what separates a real copy from a look-alike such as the two
+        different "More Than a Woman" recordings, or a re-rip with the same title)
+      - fingerprint unavailable for either  -> PROBABLE (cannot confirm identity; send to
+        review, never auto-move) when the durations are close, else DISTINCT.
+
+    Title + duration only decide which pairs are *candidates* worth fingerprinting; they
+    never by themselves justify a move.
+    """
+    kf, of = keeper.fingerprint, other.fingerprint
+    if kf and of:
+        return 'strong' if kf == of else 'distinct'
+    if not (keeper.duration and other.duration):
+        return 'probable'
     dd = abs(keeper.duration - other.duration)
-    if keeper.duration and other.duration:
-        if dd <= STRONG_SECONDS:
-            return 'strong'
-        if dd <= PROBABLE_SECONDS:
-            return 'probable'
-        return 'distinct'
-    # no durations and no fingerprint match -> can't confirm; treat as probable
-    return 'probable'
+    return 'probable' if dd <= PROBABLE_SECONDS else 'distinct'
 
 
 def _safe_move(src: Path, dest: Path) -> bool:
@@ -254,9 +302,18 @@ def deduplicate_library(
 
             by_title: Dict[str, List[Track]] = defaultdict(list)
             for t in tracks:
-                if t.norm_title:
-                    by_title[t.norm_title].append(t)
-                    cross[(t.norm_title + '|' + normalize_for_match(t.artist, aggressive))].append(t)
+                # placeholder / generic titles do not identify a song - never group by them
+                if not t.norm_title or _is_generic_title(t.norm_title):
+                    continue
+                by_title[t.norm_title].append(t)
+                cross[(t.norm_title + '|' + normalize_for_match(t.artist, aggressive))].append(t)
+            # copy-pair pass: a numbered copy ('foo 2') joins the real 'foo' group when it exists
+            for t in tracks:
+                if not t.norm_title or _is_generic_title(t.norm_title):
+                    continue
+                base = _copy_base(t.norm_title)
+                if base and base in by_title and t not in by_title[base]:
+                    by_title[base].append(t)
 
             for norm, members in by_title.items():
                 if len(members) < 2:

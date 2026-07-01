@@ -136,8 +136,15 @@ def _build_library(tmp_path):
     return lib, keeper, loser, needs_art_track, needs_art_album
 
 
+def _fp_identical(tracks, enabled):
+    """Force the keeper/loser pair to share one fingerprint (a genuine copy)."""
+    for t in tracks:
+        t.fingerprint = "SAME"
+
+
 @pytest.mark.skipif(not ffprobe_available(), reason="needs bundled ffmpeg/ffprobe")
-def test_lifecycle_dry_run_reports_but_changes_nothing(tmp_path):
+def test_lifecycle_dry_run_reports_but_changes_nothing(tmp_path, monkeypatch):
+    import utilities.deduplicate as ddmod
     from utilities.deduplicate import deduplicate_library
     from utilities.generate_folder_art import generate_folder_art
 
@@ -146,7 +153,9 @@ def test_lifecycle_dry_run_reports_but_changes_nothing(tmp_path):
     run_history_path = tmp_path / "state" / "run_history.json"
 
     # dedupe (dry-run): would move the lesser duplicate, but touches nothing.
-    dd = deduplicate_library(str(lib), backup_dir=backup, dry_run=True, fingerprint=False)
+    # Fingerprint is authoritative for a move -> force the pair identical.
+    monkeypatch.setattr(ddmod, "_add_fingerprints", _fp_identical)
+    dd = deduplicate_library(str(lib), backup_dir=backup, dry_run=True, fingerprint=True)
     assert dd.moved == 1
 
     # covers/folder-art (dry-run): would create one folder.jpg (NeedsArt only).
@@ -172,7 +181,8 @@ def test_lifecycle_dry_run_reports_but_changes_nothing(tmp_path):
 
 
 @pytest.mark.skipif(not ffprobe_available(), reason="needs bundled ffmpeg/ffprobe")
-def test_lifecycle_execute_moves_dupe_and_writes_folder_art(tmp_path):
+def test_lifecycle_execute_moves_dupe_and_writes_folder_art(tmp_path, monkeypatch):
+    import utilities.deduplicate as ddmod
     from utilities.deduplicate import deduplicate_library
     from utilities.generate_folder_art import generate_folder_art
 
@@ -181,8 +191,10 @@ def test_lifecycle_execute_moves_dupe_and_writes_folder_art(tmp_path):
     run_history_path = tmp_path / "state" / "run_history.json"
 
     # dedupe (execute): loser MOVED to mirrored backup path, keeper kept (not deleted).
+    # Fingerprint is authoritative for a move -> force the pair identical.
+    monkeypatch.setattr(ddmod, "_add_fingerprints", _fp_identical)
     dd = deduplicate_library(str(lib), backup_dir=backup, scan_only=False,
-                             dry_run=False, fingerprint=False)
+                             dry_run=False, fingerprint=True)
     assert dd.moved == 1
     assert keeper.exists()
     assert not loser.exists()
