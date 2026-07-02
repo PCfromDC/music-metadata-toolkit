@@ -110,6 +110,20 @@ def cmd_repair_covers(args):
         print("(Dry run - no changes made)")
 
 
+def cmd_sync_covers(args):
+    """Reconcile embedded track art with the album folder image (folder.jpg authoritative)."""
+    from utilities.cover_consistency import sync_library, _print_summary
+
+    summary = sync_library(
+        args.path,
+        scan_only=args.scan_only,
+        dry_run=args.dry_run or not (args.scan_only or args.execute),
+        execute=args.execute,
+        log_path=getattr(args, 'log', None),
+    )
+    _print_summary(summary)
+
+
 def cmd_dedupe(args):
     """Find duplicate copies of a track in a folder; move losers to backup."""
     from utilities.deduplicate import deduplicate_library
@@ -229,6 +243,18 @@ def main():
     repair_parser.add_argument('--scan-only', action='store_true', help='Report corrupted albums without making changes')
     repair_parser.add_argument('--dry-run', action='store_true', help='Show the repair plan without fetching or writing')
     repair_parser.set_defaults(func=cmd_repair_covers)
+
+    # sync-covers command (folder image <-> embedded art parity)
+    sync_parser = subparsers.add_parser(
+        'sync-covers',
+        help='Make each track match the album folder image (perceptual; folder.jpg authoritative)')
+    sync_parser.add_argument('path', help='Library / artist / album folder')
+    sync_parser.add_argument('--scan-only', action='store_true', help='report only; never write')
+    sync_parser.add_argument('--dry-run', action='store_true', help='show the plan; write nothing (default)')
+    sync_parser.add_argument('--execute', action='store_true',
+                             help='embed the folder image into mismatched tracks')
+    sync_parser.add_argument('--log', default=None, help='execute-mode log path')
+    sync_parser.set_defaults(func=cmd_sync_covers)
 
     # dedupe command
     dedupe_parser = subparsers.add_parser('dedupe', help='Find duplicate tracks; move losers to backup (never deletes)')

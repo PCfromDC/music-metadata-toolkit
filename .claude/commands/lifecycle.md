@@ -43,7 +43,7 @@ Run the phases in this exact order. Do not add, drop, or reorder phases.
 | 2 | identify | `ValidatorAgent.identify_unknown_tracks(...)` / AcoustID (`sources/acoustid.py`) for weak-metadata albums only | `fingerprint_validator` adjudicates which AcoustID hit to trust |
 | 3 | validate | `python cli.py validate "<path>"` (ValidatorAgent vs MusicBrainz/iTunes) | `conflict_resolver` + `fingerprint_validator` on ambiguous matches |
 | 4 | dedupe | `python cli.py dedupe "<path>" [--scan-only/--dry-run/--execute]` (`utilities/deduplicate.py`) | `duplicate_detector` adjudicates the `outputs/dedupe_review.json` list |
-| 5 | covers | `python cli.py repair-covers "<path>" [...]` then `generate_folder_art(root, execute=...)` (`utilities/generate_folder_art.py`) | `/verify-covers` visual match on embedded/folder art |
+| 5 | covers | `python cli.py repair-covers "<path>"` -> `generate_folder_art(root, execute=...)` -> `python cli.py sync-covers "<path>"` (`utilities/cover_consistency.py`, folder.jpg-authoritative perceptual parity) | `/verify-covers` visual match on the folder image |
 | 6 | fix | `python cli.py fix "<path>"` (FixerAgent; applies approved metadata/cover fixes) | applies only the decisions confirmed in phases 3-5 |
 
 The single Python entry point that chains all six is:
@@ -176,11 +176,29 @@ python -c "from utilities.generate_folder_art import generate_folder_art; print(
 
 Pass `execute=True` ONLY in confirmed execute mode; otherwise `execute=False`.
 
+Finally, reconcile embedded track art with the album folder image
+(**folder.jpg is authoritative**), so every track matches the cover shown in the
+media server:
+
+```bash
+cd "D:\music cleanup" && python cli.py sync-covers "<normalized_path>" [--scan-only|--dry-run|--execute]
+```
+
+`utilities/cover_consistency.py` validates each album's folder image (decodes +
+ffprobe `dims > 0`), compares it **perceptually** (difference hash, so a
+re-encoded/resized copy still matches) to each track's embedded art, and embeds
+the folder image into every track whose art is missing or different. Runs after
+`generate_folder_art` so a folder image exists to propagate. An invalid folder
+image is flagged, never propagated. Writes only under `--execute` (album backed
+up first; every embed goes through the validated core with an ffprobe read-back).
+
 **AI decision point — `/verify-covers`:** after art is in place (or planned),
 run the visual-match check from `/verify-covers` over the album `folder.jpg`
 files. Cover art can be technically valid (good size, full coverage) yet
-visually WRONG for the album (Ben Harper, 2026-01-13). Flag mismatches in the
-summary; re-embed a correct cover only under confirmed `--execute`.
+visually WRONG for the album (Ben Harper, 2026-01-13). The perceptual sync makes
+tracks match the folder image; `/verify-covers` is what catches a folder image
+that is itself the wrong picture. Flag mismatches in the summary; replace a
+wrong cover only under confirmed `--execute`.
 
 ### Phase 6 — fix
 

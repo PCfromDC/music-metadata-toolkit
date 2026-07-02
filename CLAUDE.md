@@ -45,6 +45,7 @@ D:\music cleanup\
 │   ├── batch_fix_metadata.py   # Batch metadata operations
 │   ├── embed_cover.py          # Cover art embedding
 │   ├── generate_folder_art.py  # Write folder.jpg from embedded art (additive)
+│   ├── cover_consistency.py    # Make tracks match folder.jpg (perceptual; folder authoritative)
 │   ├── repair_covers.py        # Re-fetch/re-embed corrupt or wrong covers
 │   ├── deduplicate.py          # Duplicate tracks -> backup (validate first; never deletes)
 │   ├── core/                   # Validated cover-art pipeline (cover_art, ffprobe, ...)
@@ -874,6 +875,21 @@ if not os.path.exists(kb_path):
 - [MusicBrainz Forums](https://community.metabrainz.org/) - Metadata best practices
 
 ## Changelog
+
+### 2026-07-02 (Cover consistency: folder.jpg <-> embedded parity)
+- **New `utilities/cover_consistency.py` + `cli.py sync-covers`**: the album
+  **folder image is authoritative**. For every album with a folder.jpg/cover/front,
+  it validates that image (Pillow decode + ffprobe `dims > 0`), compares it
+  **perceptually** (difference hash, so a re-encoded/resized copy of the same
+  picture still matches) to each track's embedded art, and embeds the folder image
+  into every track whose art is missing or different, so the whole album matches
+  the cover the media server shows. Invalid folder images are flagged, never
+  propagated. `--scan-only` / `--dry-run` (default) / `--execute`; execute backs up
+  the album first and routes every write through the validated core (ffprobe
+  read-back). Wired into the lifecycle **covers** phase after `generate_folder_art`
+  (repair -> folder.jpg -> sync). New counter `covers_synced`. Added
+  `tests/test_cover_consistency.py` (16 tests). `/verify-covers` remains the AI
+  layer that catches a folder image that is itself the wrong picture.
 
 ### 2026-07-02 (Shared library-walk exclusions + dedupe fingerprint gate)
 - **Canonical directory exclusions**: every walker now shares one rule set in

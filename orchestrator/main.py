@@ -625,7 +625,7 @@ def cmd_lifecycle(args):
     counts = {
         "scanned": 0, "identified": 0, "validated": 0, "needs_review": 0,
         "deduped_moved": 0, "covers_repaired": 0, "folderjpg_added": 0,
-        "fixed": 0, "flagged": 0,
+        "covers_synced": 0, "fixed": 0, "flagged": 0,
     }
 
     # =================== scan ===================
@@ -734,6 +734,17 @@ def cmd_lifecycle(args):
     gfa = generate_folder_art(str(scan_path), execute=execute)
     counts["folderjpg_added"] = gfa.get('written', 0)
     counts["flagged"] += gfa.get('failed', 0)
+    # Folder image <-> embedded art parity: folder.jpg is authoritative, so every
+    # track whose embedded art is missing/different (perceptual) is brought into
+    # line. Runs AFTER generate_folder_art so a folder image exists to propagate.
+    from utilities.cover_consistency import sync_library as _sync_covers
+    cs = _sync_covers(str(scan_path), scan_only=scan_only, dry_run=dry_run, execute=execute)
+    counts["covers_synced"] = int(cs.get('tracks_embedded' if execute else 'tracks_to_embed', 0))
+    counts["flagged"] += int(cs.get('folder_invalid', 0))
+    sverb = "synced" if execute else "would sync"
+    print(f"Cover parity: {cs.get('needs_sync', 0)} albums need sync  |  "
+          f"tracks {sverb}: {counts['covers_synced']}  |  "
+          f"folder image invalid: {cs.get('folder_invalid', 0)}")
 
     # =================== fix ===================
     print("\n--- Phase: fix ---")
@@ -779,6 +790,7 @@ def cmd_lifecycle(args):
     print(f"  Deduped moved:   {counts['deduped_moved']}")
     print(f"  Covers repaired: {counts['covers_repaired']}")
     print(f"  Folder.jpg added:{counts['folderjpg_added']}")
+    print(f"  Covers synced:   {counts['covers_synced']}")
     print(f"  Fixed:           {counts['fixed']}")
     print(f"  Flagged:         {counts['flagged']}")
     if scan_only:
