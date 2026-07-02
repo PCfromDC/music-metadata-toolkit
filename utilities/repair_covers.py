@@ -45,7 +45,7 @@ if __package__ in (None, ""):
 
 from mutagen import File as MutagenFile
 
-from utilities.core.audio_file import is_audio_file, iter_audio_files
+from utilities.core.audio_file import is_audio_file, iter_audio_files, prune_dirs
 from utilities.core.cover_art import (
     InvalidCoverArt,
     download_cover,
@@ -122,9 +122,10 @@ def diagnose_album(album_dir) -> Dict[str, object]:
 def find_album_folders(root) -> List[Path]:
     """Return every folder under ``root`` that directly contains audio files.
 
-    ``root`` itself is included when it holds audio files. The ``backups/``
-    folders this tool creates are skipped so re-runs do not treat them as
-    albums.
+    ``root`` itself is included when it holds audio files. Recycle-bin, system,
+    and backup directories (including the ``backups/`` folders this tool creates)
+    are pruned via the shared exclusion rules so re-runs never treat their
+    (often deleted) contents as albums.
     """
     root_path = Path(root)
     folders: List[Path] = []
@@ -132,8 +133,9 @@ def find_album_folders(root) -> List[Path]:
         return folders
 
     for dirpath, dirnames, filenames in os.walk(root_path):
-        # Prune backup folders from the walk so we never descend into them.
-        dirnames[:] = [d for d in dirnames if d != BACKUP_DIRNAME]
+        # Prune recycle-bin / system / backup folders so we never descend into
+        # them (BACKUP_DIRNAME == "backups" is covered by the shared rules).
+        prune_dirs(dirnames)
         if Path(dirpath).name == BACKUP_DIRNAME:
             continue
         if any(is_audio_file(name) for name in filenames):

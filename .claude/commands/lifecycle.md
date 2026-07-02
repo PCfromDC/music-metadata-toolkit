@@ -94,6 +94,18 @@ cd "D:\music cleanup" && python cli.py scan "<normalized_path>"
 Extract metadata, cover presence, and issues for every album. This seeds the
 processing queue the later phases consume.
 
+**Excluded directories.** Every phase walks the library through one shared
+exclusion rule (`utilities/core/audio_file.is_excluded_dir` /
+`is_excluded_path`), so NAS recycle bins and OS/system metadata dirs are never
+scanned, validated, de-duped, or cover-checked. Skipped names include
+`.recycle`, `#recycle`, `@eaDir`, `#snapshot`, `$RECYCLE.BIN`, `System Volume
+Information`, macOS `.Trashes`/`.Spotlight-V100`/`.fseventsd`, Syncthing
+`.stfolder`/`.stversions`, and the toolkit's own `backups/`, `.cover_backup/`,
+`_duplicates/`. Real music folders that merely start with a dot or symbol
+(`.38 Special`, `...And You Will Know Us by the Trail of Dead`) are still
+scanned. Do not add ad-hoc skip logic in a phase; extend the shared set instead
+so all walkers stay in parity.
+
 ### Phase 2 — identify
 
 Best-effort AcoustID song-ID for albums with weak metadata only (no title, or

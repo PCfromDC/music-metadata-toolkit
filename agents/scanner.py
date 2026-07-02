@@ -26,6 +26,10 @@ from mutagen.mp4 import MP4
 
 from .base import BaseAgent
 
+# Shared exclusion rules so the scanner skips the same recycle-bin / system /
+# backup dirs as every other library walker.
+from utilities.core.audio_file import is_excluded_dir
+
 
 @dataclass
 class TrackData:
@@ -235,7 +239,7 @@ class ScannerAgent(BaseAgent):
         albums = []
 
         for item in path.iterdir():
-            if item.is_dir():
+            if item.is_dir() and not is_excluded_dir(item.name):
                 # Check if it contains audio files
                 audio_files = self._find_audio_files(item)
                 if audio_files:
@@ -259,7 +263,7 @@ class ScannerAgent(BaseAgent):
         library = {}
 
         for artist_dir in path.iterdir():
-            if artist_dir.is_dir():
+            if artist_dir.is_dir() and not is_excluded_dir(artist_dir.name):
                 artist_name = artist_dir.name
                 self.log(f"Scanning artist: {artist_name}")
                 albums = self.scan_artist(str(artist_dir))

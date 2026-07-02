@@ -20,6 +20,11 @@ from pathlib import Path
 # Import agents
 from agents import ScannerAgent, ValidatorAgent, FixerAgent
 
+# Shared library-walk exclusion rules (recycle bins, system dirs, backups) so the
+# orchestrator's album discovery skips the same non-album folders as every other
+# walker (dedupe, cover-repair, folder-art).
+from utilities.core.audio_file import is_excluded_dir
+
 # Single source of truth for the lifecycle phase order (the parity anchor).
 # Downstream code should import this rather than redefining the order.
 #   from orchestrator.main import LIFECYCLE_PHASES
@@ -116,13 +121,14 @@ def cmd_scan(args):
         # Multiple albums - scan subdirectories
         print("Discovering albums...")
         for item in scan_path.iterdir():
-            if item.is_dir():
+            if item.is_dir() and not is_excluded_dir(item.name):
                 if _has_audio_files(item):
                     albums_to_scan.append(str(item))
                 else:
                     # Check subdirectories (artist/album structure)
                     for subitem in item.iterdir():
-                        if subitem.is_dir() and _has_audio_files(subitem):
+                        if (subitem.is_dir() and not is_excluded_dir(subitem.name)
+                                and _has_audio_files(subitem)):
                             albums_to_scan.append(str(subitem))
 
     print(f"Found {len(albums_to_scan)} albums to scan")
@@ -559,12 +565,13 @@ def _discover_albums(scan_path: Path) -> list:
         albums.append(str(scan_path))
         return albums
     for item in scan_path.iterdir():
-        if item.is_dir():
+        if item.is_dir() and not is_excluded_dir(item.name):
             if _has_audio_files(item):
                 albums.append(str(item))
             else:
                 for subitem in item.iterdir():
-                    if subitem.is_dir() and _has_audio_files(subitem):
+                    if (subitem.is_dir() and not is_excluded_dir(subitem.name)
+                            and _has_audio_files(subitem)):
                         albums.append(str(subitem))
     return albums
 

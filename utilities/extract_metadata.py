@@ -9,6 +9,10 @@ import json
 import csv
 import sys
 
+# Allow running as a script (python utilities/extract_metadata.py ...).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utilities.core.audio_file import prune_dirs
+
 def get_cover_art_info(filepath):
     """Extract cover art information from audio file"""
     try:
@@ -118,6 +122,7 @@ def scan_directory(base_path):
     results = []
 
     for root, dirs, files in os.walk(base_path):
+        prune_dirs(dirs)  # skip recycle-bin / system / backup dirs
         for file in files:
             ext = os.path.splitext(file)[1].lower()
             if ext in audio_extensions:

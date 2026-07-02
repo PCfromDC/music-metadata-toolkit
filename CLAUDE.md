@@ -875,6 +875,27 @@ if not os.path.exists(kb_path):
 
 ## Changelog
 
+### 2026-07-02 (Shared library-walk exclusions + dedupe fingerprint gate)
+- **Canonical directory exclusions**: every walker now shares one rule set in
+  `utilities/core/audio_file.py` (`EXCLUDED_DIR_NAMES`, `is_excluded_dir`,
+  `is_excluded_path`, `prune_dirs`). NAS recycle bins and OS/system dirs
+  (`.recycle`, `#recycle`, `@eaDir`, `#snapshot`, `$RECYCLE.BIN`, `System Volume
+  Information`, macOS `.Trashes`/`.Spotlight-V100`/`.fseventsd`, Syncthing
+  `.stfolder`/`.stversions`) plus the toolkit's own `backups/`, `.cover_backup/`,
+  `_duplicates/` are pruned from **scan, validate, dedupe, cover-repair, and
+  folder-art** walks. Fixed: the cover phase (`repair_covers.find_album_folders`)
+  was recursing into `\\...\music\.recycle\` and flagging deleted stub tracks as
+  "missing", inflating the missing/flagged counts. Real folders that start with a
+  dot/symbol (`.38 Special`, `...And You Will Know Us...`) are still scanned.
+  `deduplicate.py` and `generate_folder_art.py` dropped their private `EXC` sets
+  and delegate to the shared rules (no more drift). Added
+  `tests/test_scan_filter.py` (7 tests).
+- **Dedupe is fingerprint-authoritative**: a track is a duplicate only when its
+  Chromaprint fingerprint is identical to the keeper (different fp = distinct,
+  no fp = review/never-move). Fixed `_find_fpcalc` to locate the project-root
+  `fpcalc.exe` (it was silently disabled). Whole-library re-scan: 17 heuristic
+  candidates collapsed to 1 genuine fingerprint-verified duplicate.
+
 ### 2026-06-29 (Unified lifecycle + zero-knowledge onboarding)
 - **Unified `lifecycle` command**: `python cli.py lifecycle <path>` (and
   `python -m orchestrator.main lifecycle`) runs every phase in one canonical order
