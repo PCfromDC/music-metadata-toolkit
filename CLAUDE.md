@@ -876,6 +876,16 @@ if not os.path.exists(kb_path):
 
 ## Changelog
 
+### 2026-07-02 (Off-library album backups)
+- **Album backups now live off-library**: `repair_covers.backup_album` (used by
+  cover-repair and cover-consistency before any track rewrite) no longer creates a
+  sibling `backups/` folder inside each album. Backups are copied to
+  `D:\music_backup\_album_backups\<artist>\<album>\` (`ALBUM_BACKUP_ROOT`), mirroring
+  the album path, so they never clutter the library or get re-scanned. `repair_library`
+  and `cover_consistency.sync_library`/`sync_album` take an injectable `backup_root`
+  (default `ALBUM_BACKUP_ROOT`; tests pass a tmp dir to stay hermetic). Existing
+  in-album `backups/` folders were moved to the off-library store and removed.
+
 ### 2026-07-02 (Cover consistency: folder.jpg <-> embedded parity)
 - **New `utilities/cover_consistency.py` + `cli.py sync-covers`**: the album
   **folder image is authoritative**. For every album with a folder.jpg/cover/front,
@@ -885,8 +895,8 @@ if not os.path.exists(kb_path):
   into every track whose art is missing or different, so the whole album matches
   the cover the media server shows. Invalid folder images are flagged, never
   propagated. `--scan-only` / `--dry-run` (default) / `--execute`; execute backs up
-  the album first and routes every write through the validated core (ffprobe
-  read-back). Wired into the lifecycle **covers** phase after `generate_folder_art`
+  the album **off-library** first (see below) and routes every write through the
+  validated core (ffprobe read-back). Wired into the lifecycle **covers** phase after `generate_folder_art`
   (repair -> folder.jpg -> sync). New counter `covers_synced`. Added
   `tests/test_cover_consistency.py` (16 tests). `/verify-covers` remains the AI
   layer that catches a folder image that is itself the wrong picture.

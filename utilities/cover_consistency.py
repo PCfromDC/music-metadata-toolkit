@@ -23,8 +23,9 @@ Safety (shared three-mode contract):
   * ``--scan-only``  report only - never reads embedded art beyond hashing, never writes.
   * ``--dry-run`` (default) - compute the full plan (which tracks would change) but write nothing.
   * ``--execute`` - the only mode that writes. Before any track in an album is
-    rewritten, every audio file in that album is copied to a sibling ``backups/``
-    folder, and each embed goes through the validated core pipeline
+    rewritten, every audio file in that album is copied OFF-LIBRARY to
+    ``D:\\music_backup\\_album_backups\\<artist>\\<album>\\`` (never inside the
+    album), and each embed goes through the validated core pipeline
     (``core.cover_art.embed_in_file``: validate -> write -> ffprobe read-back).
 
 CLI (via ``cli.py``)::
@@ -198,16 +199,16 @@ def check_album(album_dir) -> AlbumResult:
     return result
 
 
-def sync_album(album_dir, *, execute: bool) -> AlbumResult:
+def sync_album(album_dir, *, execute: bool, backup_root=None) -> AlbumResult:
     """Check an album and, in *execute* mode, embed the folder image into every
-    mismatched track (after backing the album up). Returns the result with
-    ``embedded``/``failed`` populated."""
+    mismatched track (after backing the album up OFF-LIBRARY). Returns the result
+    with ``embedded``/``failed`` populated."""
     result = check_album(album_dir)
     if result.status != NEEDS_SYNC or not execute:
         return result
 
     folder_bytes = result.folder_image.read_bytes()
-    backup_album(result.album)  # pristine copy before any rewrite
+    backup_album(result.album, backup_root=backup_root)  # off-library copy before any rewrite
     for track, _reason in result.mismatches:
         try:
             embed_in_file(track, folder_bytes)  # validated write + ffprobe read-back
@@ -228,6 +229,7 @@ def sync_library(
     dry_run: bool = False,
     execute: bool = False,
     log_path: Optional[str] = None,
+    backup_root=None,
 ) -> Dict[str, object]:
     """Walk ``path`` and reconcile embedded art with each album's folder image.
 
@@ -261,7 +263,7 @@ def sync_library(
     try:
         for album in albums:
             summary["albums"] = int(summary["albums"]) + 1
-            res = sync_album(album, execute=do_execute)
+            res = sync_album(album, execute=do_execute, backup_root=backup_root)
 
             if res.status == NO_FOLDER_IMAGE:
                 summary["no_folder_image"] = int(summary["no_folder_image"]) + 1

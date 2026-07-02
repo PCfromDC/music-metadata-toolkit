@@ -92,13 +92,15 @@ def test_repair_with_cover_override_restores_dims(tmp_path):
     _embed_empty_apic(track)
 
     good = make_image_bytes("JPEG", size=(640, 640))
-    summary = repair_covers.repair_library(tmp_path, cover_override=good)
+    bk = tmp_path / "backup_store"
+    summary = repair_covers.repair_library(tmp_path, cover_override=good, backup_root=bk)
 
     assert summary["repaired"] == 1
     assert summary["files_fixed"] == 1
 
-    # Backup was created before modification.
-    assert (tmp_path / "backups" / "track.mp3").exists()
+    # Backup was created OFF-LIBRARY before modification (never a sibling backups/ dir).
+    assert not (tmp_path / "backups").exists()
+    assert list(bk.rglob("track.mp3")), "off-library backup of the track should exist"
 
     # The repaired bytes round-trip and ffprobe now sees real dimensions.
     assert extract_cover_from_file(track) == good

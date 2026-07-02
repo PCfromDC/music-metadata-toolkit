@@ -141,10 +141,12 @@ def test_check_album_invalid_folder_image(tmp_path):
 @pytest.mark.skipif(not ffprobe_available(), reason="needs bundled ffmpeg")
 def test_sync_album_execute_makes_all_match(tmp_path):
     album = _album(tmp_path, ["A", "B", None], folder_kind="A")
-    res = sync_album(album, execute=True)
+    bk = tmp_path / "backup_store"
+    res = sync_album(album, execute=True, backup_root=bk)
     assert res.embedded == 2 and res.failed == 0
-    # a pristine backup was taken before rewriting
-    assert (album / "backups").is_dir()
+    # a pristine backup was taken OFF-LIBRARY (mirrored <artist>/<album>), never in the album
+    assert (bk / "Artist" / "Album").is_dir()
+    assert not (album / "backups").exists()
     # re-check: whole album now matches the folder image
     assert check_album(album).status == CONSISTENT
 
@@ -152,29 +154,33 @@ def test_sync_album_execute_makes_all_match(tmp_path):
 @pytest.mark.skipif(not ffprobe_available(), reason="needs bundled ffmpeg")
 def test_sync_library_dry_run_writes_nothing(tmp_path):
     album = _album(tmp_path, ["A", "B"], folder_kind="A")
+    bk = tmp_path / "backup_store"
     before = (album / "02 Song 2.mp3").read_bytes()
-    summ = sync_library(tmp_path, dry_run=True)
+    summ = sync_library(tmp_path, dry_run=True, backup_root=bk)
     assert summ["needs_sync"] == 1
     assert summ["tracks_to_embed"] == 1
     assert summ["tracks_embedded"] == 0
-    assert not (album / "backups").exists()
+    assert not bk.exists() and not (album / "backups").exists()
     assert (album / "02 Song 2.mp3").read_bytes() == before   # untouched
 
 
 @pytest.mark.skipif(not ffprobe_available(), reason="needs bundled ffmpeg")
 def test_sync_library_execute_embeds_and_reports(tmp_path):
     _album(tmp_path, ["A", "B", None], folder_kind="A")
-    summ = sync_library(tmp_path, execute=True)
+    bk = tmp_path / "backup_store"
+    summ = sync_library(tmp_path, execute=True, backup_root=bk)
     assert summ["mode"] == "execute"
     assert summ["needs_sync"] == 1
     assert summ["tracks_embedded"] == 2
     assert summ["consistent"] == 0        # it was needs_sync, now fixed
+    assert (bk / "Artist" / "Album").is_dir()   # backup went off-library
 
 
 @pytest.mark.skipif(not ffprobe_available(), reason="needs bundled ffmpeg")
 def test_sync_library_scan_only_never_writes(tmp_path):
     album = _album(tmp_path, ["A", "B"], folder_kind="A")
-    summ = sync_library(tmp_path, scan_only=True, execute=True)  # scan_only wins
+    bk = tmp_path / "backup_store"
+    summ = sync_library(tmp_path, scan_only=True, execute=True, backup_root=bk)  # scan_only wins
     assert summ["mode"] == "scan-only"
     assert summ["tracks_embedded"] == 0
-    assert not (album / "backups").exists()
+    assert not bk.exists() and not (album / "backups").exists()
