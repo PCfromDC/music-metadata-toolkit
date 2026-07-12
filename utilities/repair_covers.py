@@ -17,7 +17,8 @@ or the bytes fail to decode.
 
 Safety:
   * MANDATORY backup - before any track in an album is rewritten, every audio
-    file in that album is copied to a sibling ``backups/`` folder.
+    file in that album is copied OFF-LIBRARY to
+    ``D:\\music_backup\\_album_backups\\<artist>\\<album>\\`` (never inside the album).
   * Every embed goes through ``core.cover_art`` (validated, hard-fail per file,
     fail-soft per album). Bytes are never embedded without validation.
   * Graceful - rate limits, missing API keys, and "no result" leave files
@@ -45,7 +46,7 @@ if __package__ in (None, ""):
 
 from mutagen import File as MutagenFile
 
-from utilities.core.audio_file import is_audio_file, iter_audio_files
+from utilities.core.audio_file import is_audio_file, iter_audio_files, prune_dirs
 from utilities.core.cover_art import (
     InvalidCoverArt,
     download_cover,
@@ -55,8 +56,14 @@ from utilities.core.cover_art import (
 )
 from utilities.core.ffprobe import attached_pic_dims, ffprobe_available
 
-# Directory (created inside each album) that holds pre-modification backups.
+# Legacy in-album backup dir name (still pruned from walks for back-compat with any
+# old backups/ folders that may still exist in the library).
 BACKUP_DIRNAME = "backups"
+
+# OFF-LIBRARY root for pre-modification album backups. Backups are stored here,
+# never inside the album, so they don't clutter the library or get re-scanned.
+# Each album is mirrored as <root>/<artist>/<album>/.
+ALBUM_BACKUP_ROOT = Path(r"D:\music_backup\_album_backups")
 
 # Per-file diagnosis results.
 STATUS_OK = "ok"
@@ -122,9 +129,10 @@ def diagnose_album(album_dir) -> Dict[str, object]:
 def find_album_folders(root) -> List[Path]:
     """Return every folder under ``root`` that directly contains audio files.
 
-    ``root`` itself is included when it holds audio files. The ``backups/``
-    folders this tool creates are skipped so re-runs do not treat them as
-    albums.
+    ``root`` itself is included when it holds audio files. Recycle-bin, system,
+    and backup directories (including the ``backups/`` folders this tool creates)
+    are pruned via the shared exclusion rules so re-runs never treat their
+    (often deleted) contents as albums.
     """
     root_path = Path(root)
     folders: List[Path] = []
@@ -132,8 +140,9 @@ def find_album_folders(root) -> List[Path]:
         return folders
 
     for dirpath, dirnames, filenames in os.walk(root_path):
-        # Prune backup folders from the walk so we never descend into them.
-        dirnames[:] = [d for d in dirnames if d != BACKUP_DIRNAME]
+        # Prune recycle-bin / system / backup folders so we never descend into
+        # them (BACKUP_DIRNAME == "backups" is covered by the shared rules).
+        prune_dirs(dirnames)
         if Path(dirpath).name == BACKUP_DIRNAME:
             continue
         if any(is_audio_file(name) for name in filenames):
@@ -250,18 +259,25 @@ def fetch_validated_cover(
 # --------------------------------------------------------------------------- #
 # Backup
 # --------------------------------------------------------------------------- #
-def backup_album(album_dir) -> Optional[Path]:
-    """Copy every audio file in ``album_dir`` to a sibling ``backups/`` folder.
+def backup_album(album_dir, *, backup_root=None) -> Optional[Path]:
+    """Copy every audio file in ``album_dir`` to an OFF-LIBRARY backup folder.
 
-    Existing backups are never overwritten (the first backup is the pristine
-    one). Returns the backup folder, or ``None`` if there is nothing to back up.
+    The backup mirrors the album's ``<artist>/<album>`` path under ``backup_root``
+    (default :data:`ALBUM_BACKUP_ROOT`, i.e. ``D:\\music_backup\\_album_backups``)
+    so backups live outside the music library and never get re-scanned. Existing
+    backups are never overwritten (the first backup is the pristine one). Returns
+    the backup folder, or ``None`` if there is nothing to back up.
     """
-    files = list(iter_audio_files(album_dir))
+    album = Path(album_dir)
+    files = list(iter_audio_files(album))
     if not files:
         return None
 
-    backup_dir = Path(album_dir) / BACKUP_DIRNAME
-    backup_dir.mkdir(exist_ok=True)
+    root = Path(backup_root) if backup_root else ALBUM_BACKUP_ROOT
+    # Mirror the last two path components (artist/album) so the backup is
+    # browsable and traceable without needing to know the library root.
+    backup_dir = root.joinpath(*album.parts[-2:])
+    backup_dir.mkdir(parents=True, exist_ok=True)
     for audio_file in files:
         dest = backup_dir / audio_file.name
         if not dest.exists():
@@ -278,6 +294,7 @@ def repair_library(
     scan_only: bool = False,
     dry_run: bool = False,
     cover_override: Optional[bytes] = None,
+    backup_root=None,
 ) -> Dict[str, object]:
     """Scan ``path`` for corrupted album art and repair what needs repairing.
 
@@ -288,6 +305,8 @@ def repair_library(
         cover_override: Validated image bytes to embed instead of fetching from
             the network. Used for offline testing of the re-embed path; still
             validated by the core pipeline before any write.
+        backup_root: Off-library root for pre-modification backups (default
+            :data:`ALBUM_BACKUP_ROOT`). Injected in tests to stay hermetic.
 
     Returns a summary dict:
         ``{albums, needs_repair, repaired, failed, skipped, files_fixed, details}``
@@ -370,8 +389,8 @@ def repair_library(
             summary["details"].append(detail)  # type: ignore[attr-defined]
             continue
 
-        # MANDATORY backup before any write.
-        backup_dir = backup_album(album_dir)
+        # MANDATORY backup before any write (off-library).
+        backup_dir = backup_album(album_dir, backup_root=backup_root)
         if backup_dir is not None:
             print(f"  backed up tracks to: {backup_dir}")
 

@@ -53,11 +53,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from mutagen import File as MutagenFile  # noqa: E402
 
-from utilities.core.audio_file import AUDIO_EXTS, iter_audio_files  # noqa: E402
+from utilities.core.audio_file import (  # noqa: E402
+    AUDIO_EXTS, iter_audio_files, EXCLUDED_DIR_NAMES, is_excluded_path,
+)
 from utilities.core.cover_art import extract_cover_from_file  # noqa: E402
 from utilities.core.naming import transliterate  # noqa: E402
 
-EXC = {'.recycle', '@eadir', '#recycle', 'backups', '.cover_backup', '_duplicates'}
+# Kept as a module-level name for back-compat; the canonical set + rules live in
+# utilities.core.audio_file so every walker shares one definition.
+EXC = EXCLUDED_DIR_NAMES
 
 STRONG_SECONDS = 3.0
 PROBABLE_SECONDS = 10.0
@@ -142,8 +146,7 @@ class Summary:
 
 
 def _excluded(root: Path, p: Path) -> bool:
-    return any(x.lower() in EXC or x.startswith(('.', '@', '#'))
-               for x in p.relative_to(root).parts)
+    return is_excluded_path(root, p)
 
 
 def normalize_for_match(text: str, aggressive: bool = False) -> str:

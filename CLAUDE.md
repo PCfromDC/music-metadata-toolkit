@@ -45,6 +45,7 @@ D:\music cleanup\
 │   ├── batch_fix_metadata.py   # Batch metadata operations
 │   ├── embed_cover.py          # Cover art embedding
 │   ├── generate_folder_art.py  # Write folder.jpg from embedded art (additive)
+│   ├── cover_consistency.py    # Make tracks match folder.jpg (perceptual; folder authoritative)
 │   ├── repair_covers.py        # Re-fetch/re-embed corrupt or wrong covers
 │   ├── deduplicate.py          # Duplicate tracks -> backup (validate first; never deletes)
 │   ├── core/                   # Validated cover-art pipeline (cover_art, ffprobe, ...)
@@ -874,6 +875,52 @@ if not os.path.exists(kb_path):
 - [MusicBrainz Forums](https://community.metabrainz.org/) - Metadata best practices
 
 ## Changelog
+
+### 2026-07-02 (Off-library album backups)
+- **Album backups now live off-library**: `repair_covers.backup_album` (used by
+  cover-repair and cover-consistency before any track rewrite) no longer creates a
+  sibling `backups/` folder inside each album. Backups are copied to
+  `D:\music_backup\_album_backups\<artist>\<album>\` (`ALBUM_BACKUP_ROOT`), mirroring
+  the album path, so they never clutter the library or get re-scanned. `repair_library`
+  and `cover_consistency.sync_library`/`sync_album` take an injectable `backup_root`
+  (default `ALBUM_BACKUP_ROOT`; tests pass a tmp dir to stay hermetic). Existing
+  in-album `backups/` folders were moved to the off-library store and removed.
+
+### 2026-07-02 (Cover consistency: folder.jpg <-> embedded parity)
+- **New `utilities/cover_consistency.py` + `cli.py sync-covers`**: the album
+  **folder image is authoritative**. For every album with a folder.jpg/cover/front,
+  it validates that image (Pillow decode + ffprobe `dims > 0`), compares it
+  **perceptually** (difference hash, so a re-encoded/resized copy of the same
+  picture still matches) to each track's embedded art, and embeds the folder image
+  into every track whose art is missing or different, so the whole album matches
+  the cover the media server shows. Invalid folder images are flagged, never
+  propagated. `--scan-only` / `--dry-run` (default) / `--execute`; execute backs up
+  the album **off-library** first (see below) and routes every write through the
+  validated core (ffprobe read-back). Wired into the lifecycle **covers** phase after `generate_folder_art`
+  (repair -> folder.jpg -> sync). New counter `covers_synced`. Added
+  `tests/test_cover_consistency.py` (16 tests). `/verify-covers` remains the AI
+  layer that catches a folder image that is itself the wrong picture.
+
+### 2026-07-02 (Shared library-walk exclusions + dedupe fingerprint gate)
+- **Canonical directory exclusions**: every walker now shares one rule set in
+  `utilities/core/audio_file.py` (`EXCLUDED_DIR_NAMES`, `is_excluded_dir`,
+  `is_excluded_path`, `prune_dirs`). NAS recycle bins and OS/system dirs
+  (`.recycle`, `#recycle`, `@eaDir`, `#snapshot`, `$RECYCLE.BIN`, `System Volume
+  Information`, macOS `.Trashes`/`.Spotlight-V100`/`.fseventsd`, Syncthing
+  `.stfolder`/`.stversions`) plus the toolkit's own `backups/`, `.cover_backup/`,
+  `_duplicates/` are pruned from **scan, validate, dedupe, cover-repair, and
+  folder-art** walks. Fixed: the cover phase (`repair_covers.find_album_folders`)
+  was recursing into `\\...\music\.recycle\` and flagging deleted stub tracks as
+  "missing", inflating the missing/flagged counts. Real folders that start with a
+  dot/symbol (`.38 Special`, `...And You Will Know Us...`) are still scanned.
+  `deduplicate.py` and `generate_folder_art.py` dropped their private `EXC` sets
+  and delegate to the shared rules (no more drift). Added
+  `tests/test_scan_filter.py` (7 tests).
+- **Dedupe is fingerprint-authoritative**: a track is a duplicate only when its
+  Chromaprint fingerprint is identical to the keeper (different fp = distinct,
+  no fp = review/never-move). Fixed `_find_fpcalc` to locate the project-root
+  `fpcalc.exe` (it was silently disabled). Whole-library re-scan: 17 heuristic
+  candidates collapsed to 1 genuine fingerprint-verified duplicate.
 
 ### 2026-06-29 (Unified lifecycle + zero-knowledge onboarding)
 - **Unified `lifecycle` command**: `python cli.py lifecycle <path>` (and

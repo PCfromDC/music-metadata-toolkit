@@ -48,9 +48,12 @@ from utilities.core.cover_art import (  # noqa: E402
     InvalidCoverArt,
 )
 from utilities.core.ffprobe import attached_pic_dims, ffprobe_available  # noqa: E402
-from utilities.core.audio_file import AUDIO_EXTS  # noqa: E402
+from utilities.core.audio_file import (  # noqa: E402
+    AUDIO_EXTS, EXCLUDED_DIR_NAMES, is_excluded_path,
+)
 
-EXC = {'.recycle', '@eadir', '#recycle', 'backups', '.cover_backup'}
+# Back-compat alias; canonical set + rules live in utilities.core.audio_file.
+EXC = EXCLUDED_DIR_NAMES
 IMG_EXT = {'.jpg', '.jpeg', '.png'}
 FOLDER_STEMS = ('folder', 'cover', 'front')
 
@@ -60,10 +63,7 @@ class _Skip(Exception):
 
 
 def excluded(root: Path, p: Path) -> bool:
-    return any(
-        x.lower() in EXC or x.startswith(('.', '@', '#'))
-        for x in p.relative_to(root).parts
-    )
+    return is_excluded_path(root, p)
 
 
 def has_folder_image(d: Path) -> bool:

@@ -20,6 +20,11 @@ from pathlib import Path
 # Import agents
 from agents import ScannerAgent, ValidatorAgent, FixerAgent
 
+# Shared library-walk exclusion rules (recycle bins, system dirs, backups) so the
+# orchestrator's album discovery skips the same non-album folders as every other
+# walker (dedupe, cover-repair, folder-art).
+from utilities.core.audio_file import is_excluded_dir
+
 # Single source of truth for the lifecycle phase order (the parity anchor).
 # Downstream code should import this rather than redefining the order.
 #   from orchestrator.main import LIFECYCLE_PHASES
@@ -116,13 +121,14 @@ def cmd_scan(args):
         # Multiple albums - scan subdirectories
         print("Discovering albums...")
         for item in scan_path.iterdir():
-            if item.is_dir():
+            if item.is_dir() and not is_excluded_dir(item.name):
                 if _has_audio_files(item):
                     albums_to_scan.append(str(item))
                 else:
                     # Check subdirectories (artist/album structure)
                     for subitem in item.iterdir():
-                        if subitem.is_dir() and _has_audio_files(subitem):
+                        if (subitem.is_dir() and not is_excluded_dir(subitem.name)
+                                and _has_audio_files(subitem)):
                             albums_to_scan.append(str(subitem))
 
     print(f"Found {len(albums_to_scan)} albums to scan")
@@ -559,12 +565,13 @@ def _discover_albums(scan_path: Path) -> list:
         albums.append(str(scan_path))
         return albums
     for item in scan_path.iterdir():
-        if item.is_dir():
+        if item.is_dir() and not is_excluded_dir(item.name):
             if _has_audio_files(item):
                 albums.append(str(item))
             else:
                 for subitem in item.iterdir():
-                    if subitem.is_dir() and _has_audio_files(subitem):
+                    if (subitem.is_dir() and not is_excluded_dir(subitem.name)
+                            and _has_audio_files(subitem)):
                         albums.append(str(subitem))
     return albums
 
@@ -618,7 +625,7 @@ def cmd_lifecycle(args):
     counts = {
         "scanned": 0, "identified": 0, "validated": 0, "needs_review": 0,
         "deduped_moved": 0, "covers_repaired": 0, "folderjpg_added": 0,
-        "fixed": 0, "flagged": 0,
+        "covers_synced": 0, "fixed": 0, "flagged": 0,
     }
 
     # =================== scan ===================
@@ -727,6 +734,17 @@ def cmd_lifecycle(args):
     gfa = generate_folder_art(str(scan_path), execute=execute)
     counts["folderjpg_added"] = gfa.get('written', 0)
     counts["flagged"] += gfa.get('failed', 0)
+    # Folder image <-> embedded art parity: folder.jpg is authoritative, so every
+    # track whose embedded art is missing/different (perceptual) is brought into
+    # line. Runs AFTER generate_folder_art so a folder image exists to propagate.
+    from utilities.cover_consistency import sync_library as _sync_covers
+    cs = _sync_covers(str(scan_path), scan_only=scan_only, dry_run=dry_run, execute=execute)
+    counts["covers_synced"] = int(cs.get('tracks_embedded' if execute else 'tracks_to_embed', 0))
+    counts["flagged"] += int(cs.get('folder_invalid', 0))
+    sverb = "synced" if execute else "would sync"
+    print(f"Cover parity: {cs.get('needs_sync', 0)} albums need sync  |  "
+          f"tracks {sverb}: {counts['covers_synced']}  |  "
+          f"folder image invalid: {cs.get('folder_invalid', 0)}")
 
     # =================== fix ===================
     print("\n--- Phase: fix ---")
@@ -772,6 +790,7 @@ def cmd_lifecycle(args):
     print(f"  Deduped moved:   {counts['deduped_moved']}")
     print(f"  Covers repaired: {counts['covers_repaired']}")
     print(f"  Folder.jpg added:{counts['folderjpg_added']}")
+    print(f"  Covers synced:   {counts['covers_synced']}")
     print(f"  Fixed:           {counts['fixed']}")
     print(f"  Flagged:         {counts['flagged']}")
     if scan_only:
