@@ -7,6 +7,17 @@ library:
   backup_enabled: true
   backup_path: "D:/music_backup"
 
+# Music import (bring songs/albums in from an external source, de-dupe by audio
+# quality at the TRACK level). Source is left intact (copy only). A NEW album is
+# imported whole; for an EXISTING album, each source track that is higher audio
+# quality UPGRADES the matching track and each missing track is ADDED (no track is
+# ever lost). Quality: lossless > lossy; then bit-depth x sample-rate; then bitrate.
+# Used by `cli.py import` / /import-music.
+import:
+  # Set this to your iTunes Music backup, or pass the source on the command line:
+  #   python cli.py import "//your-nas/backups/iTunes/Music" --dest "//your-nas/music"
+  itunes_source: "/path/to/iTunes/Music"
+
 # Data sources for validation (in priority order)
 sources:
   primary: musicbrainz
