@@ -124,6 +124,22 @@ def cmd_sync_covers(args):
     _print_summary(summary)
 
 
+def cmd_import(args):
+    """Import albums from an external source (e.g. iTunes) into the library, de-duping by quality."""
+    from utilities.importer import import_albums, print_report
+
+    report = import_albums(
+        args.source,
+        getattr(args, 'dest', None),
+        scan_only=args.scan_only,
+        dry_run=args.dry_run or not (args.scan_only or args.execute),
+        execute=args.execute,
+        enrich=not getattr(args, 'no_enrich', False),
+        metadata_check=not getattr(args, 'no_metadata', False),
+    )
+    print_report(report)
+
+
 def cmd_dedupe(args):
     """Find duplicate copies of a track in a folder; move losers to backup."""
     from utilities.deduplicate import deduplicate_library
@@ -255,6 +271,20 @@ def main():
                              help='embed the folder image into mismatched tracks')
     sync_parser.add_argument('--log', default=None, help='execute-mode log path')
     sync_parser.set_defaults(func=cmd_sync_covers)
+
+    # import command (bring albums in from an external source, de-dupe by audio quality)
+    import_parser = subparsers.add_parser(
+        'import',
+        help='Import albums from a source (e.g. iTunes) into the library, de-duping by audio quality')
+    import_parser.add_argument('source', nargs='?', default=None,
+                               help='source folder (default: import.itunes_source in music-config.yaml)')
+    import_parser.add_argument('--dest', default=None, help='library root (default: config library.root)')
+    import_parser.add_argument('--scan-only', action='store_true', help='report the plan only; copy nothing')
+    import_parser.add_argument('--dry-run', action='store_true', help='show the NEW/UPGRADE/SKIP plan; copy nothing (default)')
+    import_parser.add_argument('--execute', action='store_true', help='perform the copies (and delete replaced lower-quality copies)')
+    import_parser.add_argument('--no-enrich', action='store_true', help='skip post-import enrichment (folder.jpg / cover sync / metadata check)')
+    import_parser.add_argument('--no-metadata', action='store_true', help='enrich covers but skip the MusicBrainz/iTunes metadata + folder-name check')
+    import_parser.set_defaults(func=cmd_import)
 
     # dedupe command
     dedupe_parser = subparsers.add_parser('dedupe', help='Find duplicate tracks; move losers to backup (never deletes)')
